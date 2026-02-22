@@ -1,0 +1,57 @@
+# Inertia + Vue 3 Frontend Rules
+
+## CRITICAL: inertia-app.js setup() — NEVER CHANGE THIS PATTERN
+
+File: `resources/js/inertia-app.js`
+
+The `setup()` callback in `createInertiaApp` MUST use `h(App, props)`:
+
+```js
+// ✅ CORRECT — always use this form
+setup({ el, App, props, plugin }) {
+    createApp({ render: () => h(App, props) }).use(plugin).mount(el);
+}
+```
+
+```js
+// ❌ WRONG — never use this form, even though it looks valid
+setup({ el, App, props, plugin }) {
+    createApp(App).use(plugin).mount(el);
+}
+```
+
+### Why this matters
+
+`@inertiajs/vue3` v1.x passes `initialPage` and `resolveComponent` through `props`.
+Without `h(App, props)`, the Inertia `App` component receives no `initialPage`.
+`router.init()` is then called with `initialPage = undefined`, and any Inertia
+page throws:
+
+```
+TypeError: Cannot read properties of undefined (reading 'url')
+    at Ql.handleInitialPageVisit
+```
+
+This produces a **blank screen** with no obvious cause. See `docs/CriticalFixProcedures.md` FIX-001.
+
+### If you need to modify inertia-app.js
+
+1. Read `docs/CriticalFixProcedures.md` FIX-001 first.
+2. Do NOT change the `setup()` function signature or body.
+3. `h` must always be imported from `vue`.
+4. After any change, run `npm run build` and verify the page loads.
+
+## Adding New Inertia Pages
+
+All Vue page components go in `resources/js/Pages/` following the structure:
+- `Pages/Admin/SomePage.vue` → `Inertia::render('Admin/SomePage')`
+- `Pages/Billing/SomePage.vue` → `Inertia::render('Billing/SomePage')`
+
+The glob `import.meta.glob('./Pages/**/*.vue')` auto-discovers all pages.
+No changes to `inertia-app.js` are needed when adding new pages.
+
+## Inertia vs Blade
+
+- Inertia routes → `app.blade.php` (has `@inertia` directive, loads `inertia-app.js`)
+- Blade routes → `admin.layouts.main` (Bootstrap/jQuery, loads `app.js`)
+- **Never load `inertia-app.js` on a Blade page** — it will crash because there is no `#app[data-page]` element.

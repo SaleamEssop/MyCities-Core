@@ -1,0 +1,20 @@
+# Reduce build context and avoid overwriting installed deps
+/node_modules
+/vendor
+/composer.lock
+.git
+.gitignore
+.env
+.env.backup
+*.md
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+*.log
+docker-compose*.yml
+.dockerignore

@@ -1,0 +1,29 @@
+/* MyCities User App — Design Tokens */
+:root {
+  --ua-primary:         #009BA4;   /* teal — header, buttons, accents */
+  --ua-primary-dark:    #007A82;   /* hover / pressed state */
+  --ua-orange:          #FF9800;   /* alert banners, "reading due" pill */
+  --ua-orange-dark:     #E65100;   /* orange hover */
+  --ua-amount:          #1565C0;   /* grand total R amounts */
+  --ua-water:           #2196F3;   /* water section icon + accent */
+  --ua-electricity:     #FFA000;   /* electricity section icon + accent */
+  --ua-green:           #4CAF50;   /* payments, credits, Actual status */
+  --ua-grey:            #9E9E9E;   /* Estimated status */
+  --ua-amber:           #FF8F00;   /* Provisional status */
+  --ua-bg:              #F5F5F5;   /* page background */
+  --ua-card:            #FFFFFF;   /* card / section background */
+  --ua-text:            #212121;   /* primary body text */
+  --ua-text-secondary:  #757575;   /* secondary / label text */
+  --ua-divider:         #E0E0E0;   /* dividers, borders */
+  --ua-shadow:          0 2px 4px rgba(0,0,0,0.10);
+  --ua-radius:          8px;
+  --ua-radius-sm:       4px;
+}
+
+/* Google Font: Nunito */
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&display=swap');
+
+/* Apply font to user app elements only */
+.ua-root, .splash-root, .login-root {
+  font-family: 'Nunito', sans-serif;
+}

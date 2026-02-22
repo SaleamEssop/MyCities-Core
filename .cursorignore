@@ -1,0 +1,65 @@
+# ============================================================================
+# FORENSIC PERIMETER: LEGACY BILLING SERVICES QUARANTINE
+# ============================================================================
+# These files are OUTSIDE the Forensic Perimeter and must be ignored
+# by Cursor to prevent accidental legacy bloat contamination.
+
+# Legacy Billing Services (ALL except CalculatorPHP.php and stubs)
+# Note: Stub files (BillingEngine.php) are allowed to prevent container errors
+# app/Services/Billing*.php
+app/Services/Unified*.php
+app/Services/Tier*.php
+app/Services/Reconciliation*.php
+app/Services/Segment*.php
+app/Services/Period*.php
+app/Services/Reading*.php
+app/Services/DateToDate*.php
+app/Services/SinglePeriod*.php
+app/Services/TariffCalculator*.php
+app/Services/Traceability*.php
+app/Services/PeriodImmutability*.php
+app/Services/Monitoring*.php
+
+# Specific legacy files (explicit exclusions)
+app/Services/Billing_Engine.php
+app/Services/BillingEngine.php
+app/Services/BillingCalculatorOrchestrator.php
+app/Services/BillingCalculatorPeriodToPeriod.php
+app/Services/BillingCalculatorDateToDate.php
+app/Services/BillingCalculatorDualRun.php
+app/Services/BillingPeriodCalculator.php
+app/Services/UnifiedBillingService.php
+app/Services/UnifiedTariffProcessor.php
+app/Services/TierBillingService.php
+app/Services/ReconciliationService.php
+app/Services/SegmentService.php
+app/Services/PeriodAllocationService.php
+app/Services/PeriodStatusService.php
+app/Services/ReadingEntryService.php
+app/Services/DateToDatePeriodCalculator.php
+app/Services/SinglePeriodCalculator.php
+app/Services/TariffCalculatorService.php
+app/Services/TraceabilityService.php
+app/Services/PeriodImmutabilityGuard.php
+app/Services/MonitoringSessionService.php
+
+# Legacy Observers (outside perimeter)
+app/Observers/MeterReadingObserver.php
+
+# Legacy Models (outside perimeter)
+app/Models/RegionsAccountTypeCost.php
+
+# ============================================================================
+# ALLOWED FILES (Inside Forensic Perimeter)
+# ============================================================================
+# These files are EXEMPT from ignore rules:
+# !app/Services/CalculatorPHP.php
+# !app/Services/BillingEngine.php  # Stub file to prevent container errors
+# !app/Http/Controllers/Admin/BillingCalculatorController.php
+# !app/Models/Bill.php
+# !app/Models/MeterReadings.php
+# !app/Models/TariffTemplate.php
+# !app/Models/TariffTier.php
+# !resources/views/admin/calculator-php.blade.php
+# !public/js/calculator-php-ui.js
+

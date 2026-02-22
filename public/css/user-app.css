@@ -1,0 +1,16 @@
+/* MyCities User App — design tokens & utilities */
+:root {
+  --ua-primary:   #2c3e50;
+  --ua-accent:    #3498db;
+  --ua-success:   #27ae60;
+  --ua-warning:   #e67e22;
+  --ua-danger:    #e74c3c;
+  --ua-bg:        #f4f6f9;
+  --ua-card-bg:   #ffffff;
+  --ua-text:      #2d3748;
+  --ua-muted:     #718096;
+  --ua-border:    #e2e8f0;
+  --ua-radius:    10px;
+  --ua-shadow:    0 2px 8px rgba(0,0,0,0.08);
+  --ua-font:      'Nunito', -apple-system, sans-serif;
+}

@@ -1,0 +1,27 @@
+name: Zero Calculation Rule Check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  zero-calculation-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Check Zero Calculation Rule
+      run: bash ci/check_no_billing_math_outside_calculator.sh
+
+
+
+
+
+
+
+
+
+

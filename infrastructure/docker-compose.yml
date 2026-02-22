@@ -1,0 +1,97 @@
+# MyCities-Core — Same stack as Cline (Laravel + MySQL + Nginx). No separate frontend; no certbot.
+# Run from infrastructure/: docker-compose --env-file .env up -d
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mycities-core-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-mycities_core}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-MyCitiesCoreRoot!}
+      MYSQL_USER: ${DB_USERNAME:-mycities_core_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-MyCitiesCorePass!}
+    ports:
+      - "${DB_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - mycities-core-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  laravel:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: mycities-core-laravel:latest
+    container_name: mycities-core-laravel
+    restart: unless-stopped
+    working_dir: /var/www/html
+    environment:
+      APP_NAME: ${APP_NAME:-MyCities-Core}
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_URL: ${APP_URL:-http://localhost}
+      APP_KEY: ${APP_KEY:-}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-mycities_core}
+      DB_USERNAME: ${DB_USERNAME:-mycities_core_user}
+      DB_PASSWORD: ${DB_PASSWORD:-MyCitiesCorePass!}
+      SESSION_DRIVER: file
+      CACHE_DRIVER: file
+      QUEUE_CONNECTION: sync
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - mycities-core-network
+    expose:
+      - "9000"
+    volumes:
+      - laravel_public:/var/www/html/public
+      - laravel_storage:/var/www/html/storage
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm -t 2>/dev/null && (echo '' | timeout 2 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9000') 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 8s
+      retries: 6
+      start_period: 40s
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: mycities-core-nginx:latest
+    container_name: mycities-core-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    depends_on:
+      laravel:
+        condition: service_healthy
+    networks:
+      - mycities-core-network
+    volumes:
+      - laravel_public:/var/www/html/public:ro
+      - laravel_storage:/var/www/html/storage:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mysql_data:
+  laravel_public:
+  laravel_storage:
+
+networks:
+  mycities-core-network:
+    driver: bridge

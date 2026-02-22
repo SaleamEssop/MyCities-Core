@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Period Header Mockup</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 40px;
+            background: #f5f5f5;
+        }
+        .mockup-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            margin-bottom: 30px;
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            border-spacing: 0;
+            margin-bottom: 20px;
+        }
+        tbody tr {
+            background: #D9D9D9;
+            border-radius: 8px;
+            margin: 12px 0;
+            cursor: pointer;
+        }
+        tbody td {
+            padding: 12px 20px;
+            border: none;
+            vertical-align: middle;
+            text-align: left;
+        }
+        tbody td:last-child {
+            text-align: right;
+        }
+        .period-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .period-date {
+            font-size: 14px;
+            color: #000000;
+            margin-bottom: 4px;
+        }
+        .period-usage {
+            font-size: 14px;
+            color: #000000;
+        }
+        .period-usage strong {
+            font-weight: 700;
+        }
+        .period-values {
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        .period-values:last-child {
+            margin-bottom: 0;
+        }
+        .period-values strong {
+            font-weight: 700;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: #F4B62F;
+            color: #000000;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .status-badge.calculated {
+            background: #0D8E32;
+            color: #FFFFFF;
+        }
+    </style>
+</head>
+<body>
+    <div class="mockup-container">
+        <h1>Period Header Mockup - Matching Image Layout</h1>
+        
+        <table id="period_table">
+            <tbody>
+                <!-- Period 1 - PROVISIONAL -->
+                <tr>
+                    <td>
+                        <div class="period-title">Period 1 -</div>
+                        <div class="period-date">1st Feb 2026 to 28th Feb</div>
+                        <div class="period-usage">Usage: <strong>45000 L</strong></div>
+                    </td>
+                    <td>
+                        <div class="period-values">Opening: <strong>45000</strong></div>
+                        <div class="period-values">Closing: <strong>72000</strong></div>
+                        <div class="period-values">Calculated: <strong>45000</strong></div>
+                    </td>
+                    <td>
+                        <span class="status-badge">PROVISIONAL</span>
+                    </td>
+                </tr>
+                
+                <!-- Period 2 - CALCULATED (example) -->
+                <tr>
+                    <td>
+                        <div class="period-title">Period 2 -</div>
+                        <div class="period-date">1st Mar 2026 to 31st Mar</div>
+                        <div class="period-usage">Usage: <strong>38000 L</strong></div>
+                    </td>
+                    <td>
+                        <div class="period-values">Opening: <strong>72000</strong></div>
+                        <div class="period-values">Closing: <strong>110000</strong></div>
+                        <div class="period-values">Calculated: <strong>110000</strong></div>
+                    </td>
+                    <td>
+                        <span class="status-badge calculated">CALCULATED</span>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        
+        <div style="text-align: center; padding: 12px 0;">
+            <button style="background:#2f91b9; color:white; border:none; padding:10px 20px; border-radius:6px; font-size:16px; cursor:pointer;">Add Period</button>
+        </div>
+        
+        <div style="margin-top: 40px; padding: 20px; background: #f9f9f9; border-radius: 8px;">
+            <h2 style="margin-top: 0;">Layout Structure:</h2>
+            <ul>
+                <li><strong>Left Column:</strong> Period number, Date range, Usage</li>
+                <li><strong>Right Column:</strong> Opening, Closing, Calculated (each on separate line)</li>
+                <li><strong>Far Right:</strong> Status badge (right-aligned)</li>
+            </ul>
+            <p><strong>Date Format:</strong> "1st Feb 2026 to 28th Feb" (start with year, end without year)</p>
+        </div>
+    </div>
+</body>
+</html>
+
+
+
+
+
