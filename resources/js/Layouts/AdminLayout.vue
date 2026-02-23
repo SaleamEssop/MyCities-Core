@@ -107,8 +107,8 @@ const user = computed(() => page.props.auth?.user)
 
 const menuItems = [
   { label: 'Dashboard', icon: 'fas fa-fw fa-tachometer-alt', route: 'admin.home', routes: ['admin.home'] },
-  { label: 'User Accounts - Setup', icon: 'fas fa-fw fa-user-plus', route: 'user-accounts.setup', routes: ['user-accounts.setup'] },
-  { label: 'User Accounts - Manager', icon: 'fas fa-fw fa-users-cog', route: 'user-accounts.manager', routes: ['user-accounts.manager'] },
+  { label: 'User Setup', icon: 'fas fa-fw fa-user-plus', route: 'user.setup', routes: ['user.setup'] },
+  { label: 'Account Manager', icon: 'fas fa-fw fa-users-cog', route: 'account-manager', routes: ['account-manager'] },
   { label: 'Sites', icon: 'fas fa-fw fa-location-arrow', route: 'show-sites', routes: ['show-sites', 'create-site-form'] },
   { label: 'Regions', icon: 'fas fa-fw fa-map-marker-alt', route: 'regions-list', routes: ['regions-list', 'add-region-form'] },
   { label: 'Tariff Templates', icon: 'fas fa-fw fa-file-invoice-dollar', route: 'tariff-template', routes: ['tariff-template', 'tariff-template-create'] },

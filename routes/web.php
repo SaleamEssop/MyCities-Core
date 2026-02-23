@@ -106,8 +106,15 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('/system-intelligence/check-updates', [\App\Http\Controllers\SystemIntelligenceController::class, 'checkForUpdates'])
         ->name('system.intelligence.check-updates');
 
-    // --- USER ACCOUNTS - SETUP (Wizard Flow) ---
-    Route::get('user-accounts/setup', [UserAccountSetupController::class, 'index'])->name('user-accounts.setup');
+    // --- USER SETUP (User management only — no account/meter logic) ---
+    Route::get('user/setup', [UserAccountSetupController::class, 'userSetupIndex'])->name('user.setup');
+    Route::post('user/create', [UserAccountSetupController::class, 'storeUserOnly'])->name('user.create');
+    Route::post('user/reset-password', [UserAccountSetupController::class, 'resetPassword'])->name('user.reset-password');
+    Route::patch('user/{id}/toggle-status', [UserAccountSetupController::class, 'toggleStatus'])->name('user.toggle-status');
+    Route::delete('user/{id}', [UserAccountSetupController::class, 'destroyUser'])->name('user.destroy');
+
+    // --- USER ACCOUNTS - SETUP (legacy redirect) ---
+    Route::get('user-accounts/setup', fn () => redirect()->route('user.setup'))->name('user-accounts.setup');
     Route::post('user-accounts/setup', [UserAccountSetupController::class, 'store'])->name('user-accounts.setup.store');
     Route::post('user-accounts/setup/user-only', [UserAccountSetupController::class, 'storeUserOnly'])->name('user-accounts.setup.store-user-only');
     Route::post('user-accounts/setup/validate-email', [UserAccountSetupController::class, 'validateEmail'])->name('user-accounts.setup.validate-email');
@@ -234,6 +241,13 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('sites/delete/{id}', [AdminController::class, 'deleteSite']);
     Route::post('sites/get-by-user', [AdminController::class, 'getSitesByUser'])->name('get-sites-by-user');
 
+    // --- ACCOUNT MANAGER (new clean wizard: user search → account → meters) ---
+    Route::get('account-manager', [\App\Http\Controllers\Admin\AccountManagerController::class, 'index'])->name('account-manager');
+    Route::get('account-manager/user/{id}', [\App\Http\Controllers\Admin\AccountManagerController::class, 'getUserAccounts'])->name('account-manager.user');
+    Route::post('account-manager/account', [\App\Http\Controllers\Admin\AccountManagerController::class, 'storeAccount'])->name('account-manager.account.store');
+    Route::post('account-manager/meter', [\App\Http\Controllers\Admin\AccountManagerController::class, 'storeMeter'])->name('account-manager.meter.store');
+    Route::delete('account-manager/meter/{id}', [\App\Http\Controllers\Admin\AccountManagerController::class, 'deleteMeter'])->name('account-manager.meter.delete');
+
     // --- ACCOUNTS ---
     Route::get('accounts', function () {
         $accounts = Account::with('site')->orderBy('id')->get()->map(fn ($a) => [
@@ -326,6 +340,10 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     // --- CLEAN CALCULATOR (PD.md ↔ Calculator.php, Vue-rendered via Inertia) ---
     Route::get('calculator', [\App\Http\Controllers\Admin\CalculatorController::class, 'index'])->name('calculator');
     Route::post('calculator/compute', [\App\Http\Controllers\Admin\CalculatorController::class, 'compute'])->name('calculator.compute');
+    Route::post('calculator/compute-charge', [\App\Http\Controllers\Admin\CalculatorController::class, 'computeCharge'])->name('calculator.compute-charge');
+    Route::get('calculator/meter/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'getMeterData'])->name('calculator.meter-data');
+    Route::post('calculator/reading', [\App\Http\Controllers\Admin\CalculatorController::class, 'addReading'])->name('calculator.add-reading');
+    Route::delete('calculator/reading/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'deleteReading'])->name('calculator.delete-reading');
 
     // Billing Calculator API routes (web session auth for admin panel)
     // Note: tariff-templates route is public (defined outside auth group)
@@ -409,6 +427,10 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('pages/preview/{id}', [PagesController::class, 'preview'])->name('pages-preview');
     Route::post('pages/toggle-active/{id}', [PagesController::class, 'toggleActive'])->name('pages-toggle-active');
     Route::post('pages/update-order', [PagesController::class, 'updateOrder'])->name('pages-update-order');
+
+    // --- ADDRESS & ZONE PROXIES (server-side to avoid CORS / User-Agent restrictions) ---
+    Route::get('api/address-suggest', [AdminController::class, 'addressSuggest'])->name('address.suggest');
+    Route::get('api/zone-lookup',     [AdminController::class, 'zoneLookup'])->name('zone.lookup');
 
     // --- APPLICATION SETTINGS ---
     Route::get('settings', fn () => Inertia::render('Admin/Settings'))->name('settings.index');

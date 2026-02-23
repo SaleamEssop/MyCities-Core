@@ -134,12 +134,12 @@
                 </span>
               </div>
             </div>
-            <small class="text-muted">Address search powered by ArcGIS. Select a suggestion to auto-fill coordinates.</small>
+            <small class="text-muted">Address autocomplete powered by Photon / OpenStreetMap. Select a suggestion to auto-detect billing zone.</small>
           </div>
 
           <!-- Address Suggestions -->
           <div v-if="addressSuggestions.length > 0" class="list-group mb-3" style="max-height:200px;overflow-y:auto;">
-            <button v-for="s in addressSuggestions" :key="s.magicKey" type="button"
+            <button v-for="(s, idx) in addressSuggestions" :key="idx" type="button"
                     class="list-group-item list-group-item-action"
                     @click="selectAddress(s)">
               <i class="fas fa-map-marker-alt text-danger mr-2"></i>{{ s.text }}
@@ -164,15 +164,15 @@
           </div>
           <div v-if="detectedZone" class="alert alert-success mb-3">
             <i class="fas fa-map mr-2"></i>
-            <strong>Billing Zone Detected:</strong> {{ detectedZone.zone_name || detectedZone.name || 'Zone matched' }}
+            <strong>Billing Zone Detected:</strong> {{ detectedZone.name }}
             <div class="mt-1 small">
-              <span v-if="resolvedWaterEmail"><i class="fas fa-tint text-primary mr-1"></i> Water: {{ resolvedWaterEmail }}</span>
-              <span v-if="resolvedElecEmail" class="ml-3"><i class="fas fa-bolt text-warning mr-1"></i> Electricity: {{ resolvedElecEmail }}</span>
+              <span v-if="resolvedElecEmail"><i class="fas fa-bolt text-warning mr-1"></i> Electricity: {{ resolvedElecEmail }}</span>
+              <span class="ml-3 text-muted"><i class="fas fa-tint text-primary mr-1"></i> Water: uses municipality default</span>
             </div>
           </div>
           <div v-if="zoneNotFound && form.address" class="alert alert-warning mb-0">
             <i class="fas fa-info-circle mr-2"></i>
-            No ArcGIS zone found for this address. Billing emails will be set from the selected municipality defaults (Section 4).
+            No billing zone found for this address. Billing emails will be set from the selected municipality defaults (Section 4).
           </div>
         </div>
       </div>
@@ -281,10 +281,7 @@ const props = defineProps({
   regions: { type: Array, default: () => [] },
 })
 
-// ── ArcGIS constants (from MyCities-Cline/frontend/src/boot/axios.js) ──
-const ARCGIS_TOKEN = 'AAPKc12c49d88ad5489486e82db8ebefb94aXNVU8kLARKQJ0rA5KFeUOYRjHqTU9l2phoZf1pFANCXNR-hkFOOQJmeFUYp4nnzQ'
-const ARCGIS_GEOCODE_URL = 'https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer'
-const ARCGIS_FEATURE_URL = 'https://services3.arcgis.com/HO0zfySJshlD6Twu/arcgis/rest/services/MeterReadingSuburbs/FeatureServer/0/query'
+// ── All external calls proxied through Laravel to avoid CORS / User-Agent issues ──
 
 // ── State ──────────────────────────────────────────────────────
 const globalError       = ref('')
@@ -380,7 +377,7 @@ function clearUser() {
   userResults.value  = []
 }
 
-// ── ArcGIS Address Search ──────────────────────────────────────
+// ── Address Autocomplete (Laravel proxy → Nominatim) ──────────
 function suggestAddress() {
   clearTimeout(addressSearchTimer)
   addressSuggestions.value = []
@@ -388,11 +385,10 @@ function suggestAddress() {
   addressSearchTimer = setTimeout(async () => {
     addressSearching.value = true
     try {
-      const res = await window.axios.get(
-        `${ARCGIS_GEOCODE_URL}/suggest`,
-        { params: { f: 'pjson', token: ARCGIS_TOKEN, text: addressSearch.value, countryCode: 'ZAF' } }
-      )
-      addressSuggestions.value = res.data?.suggestions || []
+      const res = await window.axios.get(route('address.suggest'), {
+        params: { q: addressSearch.value },
+      })
+      addressSuggestions.value = res.data || []
     } catch { addressSuggestions.value = [] }
     finally { addressSearching.value = false }
   }, 350)
@@ -402,67 +398,35 @@ async function selectAddress(suggestion) {
   addressSuggestions.value = []
   addressSearch.value      = suggestion.text
   form.address             = suggestion.text
-  form.latitude            = null
-  form.longitude           = null
+  form.latitude            = suggestion.lat
+  form.longitude           = suggestion.lon
   detectedZone.value       = null
   zoneNotFound.value       = false
-
-  try {
-    const res = await window.axios.get(
-      `${ARCGIS_GEOCODE_URL}/findAddressCandidates`,
-      {
-        params: {
-          f: 'pjson',
-          token: ARCGIS_TOKEN,
-          singleLine: suggestion.text,
-          magicKey: suggestion.magicKey,
-          outSR: '{"wkid":102100}',
-          countryCode: 'ZAF',
-        }
-      }
-    )
-    const candidates = res.data?.candidates || []
-    if (candidates.length > 0) {
-      const loc     = candidates[0].location
-      form.latitude  = candidates[0].attributes?.Y || null
-      form.longitude = candidates[0].attributes?.X || null
-      await lookupZoneFromGeometry(loc)
-    }
-  } catch (e) {
-    console.error('ArcGIS findAddressCandidates error:', e)
-  }
+  await lookupZoneFromGeometry(suggestion.lat, suggestion.lon)
 }
 
-async function lookupZoneFromGeometry(geometry) {
+async function lookupZoneFromGeometry(lat, lon) {
   zoneDetecting.value = true
   detectedZone.value  = null
   zoneNotFound.value  = false
   try {
-    const res = await window.axios.get(ARCGIS_FEATURE_URL, {
-      params: {
-        f:            'json',
-        returnGeometry: false,
-        spatialRel:   'esriSpatialRelIntersects',
-        geometryType: 'esriGeometryPoint',
-        geometry:     JSON.stringify(geometry),
-        inSR:         102100,
-        outFields:    '*',
-        outSR:        102100,
-      }
-    })
+    const res = await window.axios.get(route('zone.lookup'), { params: { lat, lon } })
     const features = res.data?.features || []
     if (features.length > 0) {
-      const attrs = features[0].attributes
-      detectedZone.value = { name: attrs.ZONE_NAME || attrs.zone || attrs.Name || 'Zone' }
-      // Try to match with a local region zone by name or set emails from feature attributes
-      if (attrs.WATER_EMAIL || attrs.water_email) form.water_email = attrs.WATER_EMAIL || attrs.water_email
-      if (attrs.ELEC_EMAIL || attrs.electricity_email) form.electricity_email = attrs.ELEC_EMAIL || attrs.electricity_email
+      const a    = features[0].attributes
+      // Fields: SUBURB, REGION, DISTRICT, MREMAIL
+      const zone = [a.SUBURB, a.REGION, a.DISTRICT].filter(Boolean).join(' — ')
+      detectedZone.value = { name: zone || 'Zone detected' }
+      // MREMAIL is the electricity meter reading email only — water uses municipality default
+      if (a.MREMAIL) {
+        form.electricity_email = a.MREMAIL
+      }
     } else {
       zoneNotFound.value = true
     }
   } catch (e) {
     zoneNotFound.value = true
-    console.error('ArcGIS zone lookup error:', e)
+    console.error('Zone lookup error:', e)
   } finally {
     zoneDetecting.value = false
   }

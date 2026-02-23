@@ -31,6 +31,34 @@ class UserAccountSetupController extends Controller
     private const MAX_MONTHLY_ELECTRICITY_USAGE_KWH = 500;
 
     /**
+     * Display the User Setup page (user management only — no account logic)
+     * Route: GET /admin/user/setup
+     */
+    public function userSetupIndex()
+    {
+        $users = User::orderBy('name')
+            ->get(['id', 'name', 'email', 'contact_number', 'is_admin', 'is_demo',
+                   ...(Schema::hasColumn('users', 'is_active') ? ['is_active'] : [])])
+            ->map(fn ($u) => [
+                'id'      => $u->id,
+                'name'    => $u->name,
+                'email'   => $u->email,
+                'phone'   => $u->contact_number,
+                'active'  => $u->is_active ?? true,
+                'is_admin'=> $u->is_admin ?? false,
+            ]);
+
+        $regions    = Regions::all(['id', 'name']);
+        $meterTypes = MeterType::all(['id', 'title']);
+
+        return \Inertia\Inertia::render('Admin/UserSetup', [
+            'users'      => $users,
+            'regions'    => $regions,
+            'meterTypes' => $meterTypes,
+        ]);
+    }
+
+    /**
      * Display the setup wizard page (Inertia)
      */
     public function index()
@@ -98,6 +126,65 @@ class UserAccountSetupController extends Controller
         return response()->json([
             'exists' => $exists
         ]);
+    }
+
+    /**
+     * Reset a user's password and return the new password (admin use).
+     * POST /admin/user/reset-password
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate(['user_id' => 'required|exists:users,id']);
+        try {
+            $newPassword = substr(str_shuffle('abcdefghjkmnpqrstuvwxyz23456789'), 0, 8);
+            $user = User::findOrFail($request->user_id);
+            $user->password = Hash::make($newPassword);
+            $user->save();
+            return response()->json([
+                'success'      => true,
+                'message'      => "Password reset for {$user->name}.",
+                'new_password' => $newPassword,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Toggle a user's active/suspended status.
+     * PATCH /admin/user/{id}/toggle-status
+     */
+    public function toggleStatus(Request $request, $id)
+    {
+        try {
+            if (!Schema::hasColumn('users', 'is_active')) {
+                return response()->json(['success' => false, 'message' => 'Run migrations first: php artisan migrate'], 500);
+            }
+            $user = User::findOrFail($id);
+            $current = $user->is_active ?? true;
+            $user->is_active = !$current;
+            $user->save();
+            $status = $user->is_active ? 'activated' : 'suspended';
+            return response()->json(['success' => true, 'message' => "User {$user->name} {$status}.", 'is_active' => $user->is_active]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Permanently delete a user.
+     * DELETE /admin/user/{id}
+     */
+    public function destroyUser($id)
+    {
+        try {
+            $user = User::findOrFail($id);
+            $name = $user->name;
+            $user->delete();
+            return response()->json(['success' => true, 'message' => "User {$name} deleted."]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
     }
 
     /**

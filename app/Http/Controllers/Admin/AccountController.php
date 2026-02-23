@@ -7,7 +7,6 @@ use App\Models\Account;
 use App\Models\RegionZone;
 use App\Models\Regions;
 use App\Models\RegionsAccountTypeCost;
-use App\Models\Site;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -86,34 +85,11 @@ class AccountController extends Controller
             }
         }
 
-        // Find or create the site for this user (we attach accounts to a site)
-        // For the new flow: create a minimal site record for the address if one doesn't exist
-        $siteId = null;
-        if ($request->address && $request->user_id) {
-            $site = Site::firstOrCreate(
-                [
-                    'address' => $request->address,
-                    'user_id' => null, // sites are not directly user-owned
-                ],
-                [
-                    'title'     => $request->name_on_bill,
-                    'address'   => $request->address,
-                    'region_id' => $request->region_id,
-                ]
-            );
-            $siteId = $site->id;
-        }
-
-        // Attach user to site via sites_users pivot if available
-        if ($siteId && $request->user_id) {
-            $user = User::find($request->user_id);
-            if ($user && !$user->sites()->where('site_id', $siteId)->exists()) {
-                $user->sites()->attach($siteId);
-            }
-        }
-
+        // Accounts are self-contained with their own address fields.
+        // Sites are reserved for future building/estate management.
         $account = Account::create([
-            'site_id'              => $siteId,
+            'user_id'              => (int) $request->user_id,
+            'site_id'              => null,
             'tariff_template_id'   => $request->tariff_template_id,
             'region_id'            => $request->region_id,
             'zone_id'              => $request->zone_id,

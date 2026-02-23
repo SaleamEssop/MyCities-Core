@@ -68,8 +68,9 @@ class TariffTemplateController extends Controller
             $cost->is_water = $request->has('is_water') ? 1 : 0;
             $cost->is_electricity = $request->has('is_electricity') ? 1 : 0;
 
-            // Billing period type (MONTHLY or DATE_TO_DATE)
-            $cost->billing_type = $request->input('billing_type', 'MONTHLY');
+            // Billing period type — UI uses PERIOD_TO_PERIOD as alias for MONTHLY
+            $billingType = $request->input('billing_type', 'MONTHLY');
+            $cost->billing_type = ($billingType === 'PERIOD_TO_PERIOD') ? 'MONTHLY' : $billingType;
 
             // Explicitly assign array fields (Laravel casting handles JSON conversion)
             $cost->water_in = $request->input('waterin', []);
@@ -86,46 +87,34 @@ class TariffTemplateController extends Controller
 
             $cost->save();
 
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json([
+                    'success'     => true,
+                    'message'     => 'Tariff Template saved successfully!',
+                    'redirect'    => route('tariff-template'),
+                ]);
+            }
+
             Session::flash('alert-class', 'alert-success');
             Session::flash('alert-message', 'Tariff Template saved successfully!');
-
             return redirect()->route('tariff-template');
-            
+
         } catch (\Illuminate\Validation\ValidationException $e) {
+            $msg = 'Validation failed: ' . implode(', ', $e->validator->errors()->all());
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => $msg], 422);
+            }
             Session::flash('alert-class', 'alert-danger');
-            Session::flash('alert-message', 'Validation failed: ' . implode(', ', $e->validator->errors()->all()));
+            Session::flash('alert-message', $msg);
             return redirect()->back();
         } catch (\Exception $e) {
-            // Log full error for debugging
             \Log::error('Tariff Template save error: ' . $e->getMessage());
-            
-            // Show user-friendly message
-            $userMessage = 'Failed to save template. Please check all required fields.';
-            if (str_contains($e->getMessage(), 'Integrity constraint')) {
-                // Check which fields are actually missing
-                $missingFields = [];
-                if (empty($request->input('template_name'))) {
-                    $missingFields[] = 'Template Name';
-                }
-                if (empty($request->input('region_id'))) {
-                    $missingFields[] = 'Region';
-                }
-                if (empty($request->input('start_date'))) {
-                    $missingFields[] = 'Start Date';
-                }
-                if (empty($request->input('end_date'))) {
-                    $missingFields[] = 'End Date';
-                }
-                
-                if (!empty($missingFields)) {
-                    $userMessage = 'Database error: Required field(s) missing: ' . implode(', ', $missingFields) . '.';
-                } else {
-                    $userMessage = 'Database error: A required field constraint was violated. Please check all fields.';
-                }
+            $msg = 'Failed to save: ' . $e->getMessage();
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => $msg], 500);
             }
-            
             Session::flash('alert-class', 'alert-danger');
-            Session::flash('alert-message', $userMessage);
+            Session::flash('alert-message', $msg);
             return redirect()->back();
         }
     }

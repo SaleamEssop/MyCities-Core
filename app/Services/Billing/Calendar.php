@@ -33,14 +33,22 @@ final class Calendar
     public function periodEnd(string $periodStart, int $billDay): string
     {
         $start = new DateTimeImmutable($periodStart, new DateTimeZone(self::SAST));
-        $end = $start->modify('last day of this month');
-        $lastDayOfMonth = (int) $end->format('j');
-        if ($billDay > $lastDayOfMonth) {
-            return $end->format('Y-m-d');
+
+        // Period ends the day before the NEXT billing date (billDay of the following month).
+        $nextYear  = (int) $start->format('Y');
+        $nextMonth = (int) $start->format('n') + 1;
+        if ($nextMonth > 12) {
+            $nextMonth = 1;
+            $nextYear++;
         }
-        $end = $start->setDate((int) $start->format('Y'), (int) $start->format('n'), $billDay);
-        $end = $end->modify('-1 day');
-        return $end->format('Y-m-d');
+
+        // Clamp billDay to the last day of next month (handles Feb 28/29, etc.)
+        $nextMonthFirst   = new DateTimeImmutable("{$nextYear}-{$nextMonth}-01", new DateTimeZone(self::SAST));
+        $lastDayNextMonth = (int) $nextMonthFirst->modify('last day of this month')->format('j');
+        $effectiveBillDay = min($billDay, $lastDayNextMonth);
+
+        $nextPeriodStart = $nextMonthFirst->setDate($nextYear, $nextMonth, $effectiveBillDay);
+        return $nextPeriodStart->modify('-1 day')->format('Y-m-d');
     }
 
     /**

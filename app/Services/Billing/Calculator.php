@@ -183,7 +183,7 @@ final class Calculator
      *
      * @param array  $readings [['reading_date' => string, 'reading_value' => int|float], ...]
      * @param object $meter { digit_count?: int }
-     * @return array<int, array{start: string, end: string, start_reading: int, end_reading: int, total_usage: int, block_days: int}>
+     * @return array<int, array{start: string, end: string, start_reading: int, end_reading: int, total_usage: int, block_days: int, daily_avg: float}>
      */
     public function generateSectors(array $readings, object $meter): array
     {
@@ -202,14 +202,26 @@ final class Calculator
                 $v2 += $maxVal;
             }
             $totalUsage = $v2 - $v1;
-            $blockDays = $this->calendar->blockDays($r1['reading_date'], $r2['reading_date']);
+
+            // Sector 0 (the first) starts from the reading date itself — this is the meter anchor
+            // (start reading for Period 1, or opening reading for subsequent periods).
+            // Every subsequent sector starts from nextDay(r1.date) so that the reading date
+            // is owned exclusively by the sector it closes — no day is counted twice.
+            $sectorStart = ($i === 0)
+                ? $r1['reading_date']
+                : $this->calendar->nextDay($r1['reading_date']);
+
+            $blockDays = $this->calendar->blockDays($sectorStart, $r2['reading_date']);
+            $dailyAvg  = $blockDays > 0 ? round($totalUsage / $blockDays, 2) : 0.0;
+
             $sectors[] = [
-                'start' => $r1['reading_date'],
-                'end' => $r2['reading_date'],
-                'start_reading' => (int) (float) $r1['reading_value'],
-                'end_reading' => (int) (float) $r2['reading_value'],
-                'total_usage' => $totalUsage,
-                'block_days' => $blockDays,
+                'start'         => $sectorStart,
+                'end'           => $r2['reading_date'],
+                'start_reading' => $v1,
+                'end_reading'   => (int) (float) $r2['reading_value'],
+                'total_usage'   => $totalUsage,
+                'block_days'    => $blockDays,
+                'daily_avg'     => $dailyAvg,
             ];
         }
         return $sectors;
@@ -250,10 +262,13 @@ final class Calculator
         $usages = $this->applyRemainderMethod((int) $sector['total_usage'], $segmentBlockCounts);
 
         foreach ($segmentRanges as $idx => $range) {
+            $bd = $segmentBlockCounts[$idx];
             $segments[] = [
-                'start' => $range['start'],
-                'end' => $range['end'],
-                'usage' => $usages[$idx],
+                'start'      => $range['start'],
+                'end'        => $range['end'],
+                'usage'      => $usages[$idx],
+                'block_days' => $bd,
+                'daily_avg'  => $bd > 0 ? round($usages[$idx] / $bd, 2) : 0.0,
             ];
         }
         return $segments;
@@ -322,7 +337,7 @@ final class Calculator
      * @return array<int, array{min_units: float, max_units: float|null, rate_per_unit: float}>
      *         max_units is null for the final (unlimited) tier.
      */
-    private function loadTierDefinitions(int $templateId, object $template): array
+    public function loadTierDefinitions(int $templateId, object $template): array
     {
         $rows = DB::table('tariff_tiers')
             ->where('tariff_template_id', $templateId)
@@ -356,7 +371,7 @@ final class Calculator
         return array_map(fn ($t) => [
             'min_units'    => (float) ($t['min_units'] ?? $t['min'] ?? 0),
             'max_units'    => isset($t['max_units']) ? (float) $t['max_units'] : (isset($t['max']) ? (float) $t['max'] : null),
-            'rate_per_unit' => (float) ($t['rate_per_unit'] ?? $t['rate'] ?? 0),
+            'rate_per_unit' => (float) ($t['rate_per_unit'] ?? $t['rate'] ?? $t['cost'] ?? 0),
         ], $json);
     }
 
@@ -388,12 +403,15 @@ final class Calculator
             }
             $capacity    = $tier['max_units'] === null ? $remaining : (int) max(0, $tier['max_units'] - $tier['min_units']);
             $unitsInTier = min($remaining, $capacity);
-            $amount      = round($unitsInTier * $tier['rate_per_unit'], 4);
+            // Rates are per kL (or per kWh for electricity). Convert L → kL before applying rate.
+            $unitsKl     = $unitsInTier / 1000.0;
+            $amount      = round($unitsKl * $tier['rate_per_unit'], 4);
             $breakdown[] = [
-                'tier'   => $i + 1,
-                'units'  => $unitsInTier,
-                'rate'   => $tier['rate_per_unit'],
-                'amount' => $amount,
+                'tier'     => $i + 1,
+                'units'    => $unitsInTier,   // in L (for reference)
+                'units_kl' => round($unitsKl, 3),
+                'rate'     => $tier['rate_per_unit'],
+                'amount'   => $amount,
             ];
             $totalCharge += $amount;
             $remaining   -= $unitsInTier;

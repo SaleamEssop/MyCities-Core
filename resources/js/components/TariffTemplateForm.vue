@@ -2,29 +2,58 @@
     <div class="cust-form-wrapper">
         <div class="row">
             <div class="col-md-12">
-                <form method="POST" :action="submitUrl" @submit="handleSubmit">
+                <form @submit.prevent="handleSubmit">
+                    <!-- hidden inputs kept for fallback but form submits via AJAX -->
                     <input type="hidden" name="_token" :value="csrfToken" />
                     <input v-if="formData.id" type="hidden" name="id" :value="formData.id" />
                     
+                    <!-- Validation Error Banner -->
+                    <div v-if="validationErrors.length > 0" style="background:#f8d7da;border:1px solid #f5c6cb;color:#721c24;padding:12px 16px;border-radius:6px;margin-bottom:20px;">
+                        <strong><i class="fa fa-exclamation-triangle mr-2"></i>Please fix the following before saving:</strong>
+                        <ul style="margin:6px 0 0 0;padding-left:20px;">
+                            <li v-for="err in validationErrors" :key="err">{{ err }}</li>
+                        </ul>
+                    </div>
+
                     <!-- Basic Info -->
                     <div class="form-group" data-component="form-group" data-component-id="tariff-template-name-group-1">
-                        <label data-component="form-label" data-component-id="tariff-template-name-label-1"><strong>Template Name :</strong></label>
-                        <input class="form-control" type="text" placeholder="Template name" name="template_name" v-model="formData.template_name" data-component="text-input" data-component-id="tariff-template-name-input-1" data-component-description="Template Name" />
+                        <label data-component="form-label" data-component-id="tariff-template-name-label-1">
+                            <strong>Template Name :</strong> <span style="color:#dc3545;">*</span>
+                        </label>
+                        <input class="form-control" type="text" placeholder="Template name" name="template_name"
+                               v-model="formData.template_name"
+                               :style="submitAttempted && !formData.template_name ? 'border-color:#dc3545;' : ''"
+                               data-component="text-input" data-component-id="tariff-template-name-input-1" />
+                        <small v-if="submitAttempted && !formData.template_name" style="color:#dc3545;">Template name is required.</small>
                     </div>
                     <div class="form-group" data-component="form-group" data-component-id="tariff-template-region-group-1">
-                        <label data-component="form-label" data-component-id="tariff-template-region-label-1"><strong>Select Region :</strong></label>
-                        <select class="form-control" name="region_id" v-model="formData.region_id" @change="onRegionChange" data-component="select-input" data-component-id="tariff-template-region-select-1" data-component-description="Select Region">
+                        <label data-component="form-label" data-component-id="tariff-template-region-label-1">
+                            <strong>Select Region :</strong> <span style="color:#dc3545;">*</span>
+                        </label>
+                        <select class="form-control" name="region_id" v-model="formData.region_id"
+                                @change="onRegionChange"
+                                :style="submitAttempted && !formData.region_id ? 'border-color:#dc3545;' : ''"
+                                data-component="select-input" data-component-id="tariff-template-region-select-1">
                             <option value="">Please select Region</option>
-                            <option v-for="region in regions" :key="region.id" :value="region.id" :data-component="'select-option'" :data-component-id="'tariff-template-region-option-' + region.id">{{ region.municipality ? region.municipality + ' (' + region.province + ')' : region.name }}</option>
+                            <option v-for="region in regions" :key="region.id" :value="region.id">{{ region.municipality ? region.municipality + ' (' + region.province + ')' : region.name }}</option>
                         </select>
+                        <small v-if="submitAttempted && !formData.region_id" style="color:#dc3545;">Region is required.</small>
                     </div>
                     <div class="form-group" data-component="form-group" data-component-id="tariff-template-start-date-group-1">
-                        <label data-component="form-label" data-component-id="tariff-template-start-date-label-1"><strong>Applicable Start Date :</strong></label>
-                        <input class="form-control" type="date" placeholder="Start Date" name="start_date" v-model="formData.start_date" data-component="date-input" data-component-id="tariff-template-start-date-input-1" data-component-description="Applicable Start Date" />
+                        <label data-component="form-label" data-component-id="tariff-template-start-date-label-1">
+                            <strong>Applicable Start Date :</strong> <span style="color:#dc3545;">*</span>
+                        </label>
+                        <input class="form-control" type="date" name="start_date" v-model="formData.start_date"
+                               :style="submitAttempted && !formData.start_date ? 'border-color:#dc3545;' : ''" />
+                        <small v-if="submitAttempted && !formData.start_date" style="color:#dc3545;">Start date is required.</small>
                     </div>
                     <div class="form-group" data-component="form-group" data-component-id="tariff-template-end-date-group-1">
-                        <label data-component="form-label" data-component-id="tariff-template-end-date-label-1"><strong>Applicable End Date :</strong></label>
-                        <input class="form-control" type="date" placeholder="End Date" name="end_date" v-model="formData.end_date" data-component="date-input" data-component-id="tariff-template-end-date-input-1" data-component-description="Applicable End Date" />
+                        <label data-component="form-label" data-component-id="tariff-template-end-date-label-1">
+                            <strong>Applicable End Date :</strong> <span style="color:#dc3545;">*</span>
+                        </label>
+                        <input class="form-control" type="date" name="end_date" v-model="formData.end_date"
+                               :style="submitAttempted && !formData.end_date ? 'border-color:#dc3545;' : ''" />
+                        <small v-if="submitAttempted && !formData.end_date" style="color:#dc3545;">End date is required.</small>
                     </div>
                     <div class="form-group" style="display:none;" data-component="form-group" data-component-id="tariff-template-water-email-group-1">
                         <label data-component="form-label" data-component-id="tariff-template-water-email-label-1"><strong>Water Email :</strong></label>
@@ -110,9 +139,14 @@
                     </div>
                     <hr>
                     <div class="form-group" data-component="form-group" data-component-id="tariff-template-meter-type-group-1">
-                        <label data-component="form-label" data-component-id="tariff-template-meter-type-label-1"><strong>Select Meter Type :</strong></label>
-                        <input type="checkbox" name="is_water" id="waterchk" v-model="formData.is_water" data-component="checkbox-input" data-component-id="tariff-template-water-checkbox-1" data-component-description="Water Meter Type" /> <label for="waterchk" data-component="checkbox-label" data-component-id="tariff-template-water-checkbox-label-1">Water</label>
-                        <input type="checkbox" name="is_electricity" id="electricitychk" v-model="formData.is_electricity" data-component="checkbox-input" data-component-id="tariff-template-electricity-checkbox-1" data-component-description="Electricity Meter Type" /> <label for="electricitychk" data-component="checkbox-label" data-component-id="tariff-template-electricity-checkbox-label-1">Electricity</label>
+                        <label data-component="form-label" data-component-id="tariff-template-meter-type-label-1">
+                            <strong>Select Meter Type :</strong> <span style="color:#dc3545;">*</span>
+                        </label>
+                        <div :style="submitAttempted && !formData.is_water && !formData.is_electricity ? 'padding:6px;border:1px solid #dc3545;border-radius:4px;display:inline-block;' : 'display:inline-block;'">
+                            <input type="checkbox" name="is_water" id="waterchk" v-model="formData.is_water" /> <label for="waterchk">Water</label>
+                            <input type="checkbox" name="is_electricity" id="electricitychk" v-model="formData.is_electricity" class="ml-3" /> <label for="electricitychk">Electricity</label>
+                        </div>
+                        <small v-if="submitAttempted && !formData.is_water && !formData.is_electricity" style="color:#dc3545;display:block;">Select at least one meter type.</small>
                     </div>
                     <div class="form-group" v-show="formData.is_water" data-component="form-group" data-component-id="tariff-template-water-used-group-1">
                         <label data-component="form-label" data-component-id="tariff-template-water-used-label-1"><strong>Water Used in KL :</strong></label>
@@ -132,19 +166,21 @@
                                 <button type="button" class="btn btn-sm btn-outline-secondary btn-circle" @click="addWaterInRow">
                                     <i class="fa fa-plus"></i>
                                 </button>
+                                <small class="text-muted ml-2">Min is auto-filled from the previous tier's Max.</small>
                             </div>
                         </div>
                         <div v-for="(row, index) in waterIn" :key="'waterin-' + index" class="row mb-2">
                             <div class="col-md-2">
                                 <div class="form-group">
-                                    <label>Min (L)</label>
-                                    <input class="form-control" type="text" placeholder="Min litres" :name="'waterin[' + index + '][min]'" v-model="row.min" @input="filterDecimal($event)" />
+                                    <label>Min (L) <small class="text-muted">(auto)</small></label>
+                                    <input class="form-control bg-light" type="text" :name="'waterin[' + index + '][min]'" v-model="row.min" readonly tabindex="-1" />
                                 </div>
                             </div>
                             <div class="col-md-2">
                                 <div class="form-group">
-                                    <label>Max (L)</label>
-                                    <input class="form-control" type="text" placeholder="Max litres" :name="'waterin[' + index + '][max]'" v-model="row.max" @input="filterDecimal($event)" />
+                                    <label>Max (L) <span style="color:#dc3545;">*</span></label>
+                                    <input class="form-control" type="text" placeholder="e.g. 6000" :name="'waterin[' + index + '][max]'" v-model="row.max"
+                                           @input="filterDecimal($event); syncNextTierMin(waterIn, index)" />
                                 </div>
                             </div>
                             <div class="col-md-2">
@@ -348,19 +384,21 @@
                                 <button type="button" class="btn btn-sm btn-outline-secondary btn-circle" @click="addElectricityRow">
                                     <i class="fa fa-plus"></i>
                                 </button>
+                                <small class="text-muted ml-2">Min is auto-filled from the previous tier's Max.</small>
                             </div>
                         </div>
                         <div v-for="(row, index) in electricity" :key="'electricity-' + index" class="row mb-2">
                             <div class="col-md-3">
                                 <div class="form-group">
-                                    <label>Min (KWH)</label>
-                                    <input class="form-control" type="text" placeholder="Min" :name="'electricity[' + index + '][min]'" v-model="row.min" @input="filterDecimal($event)" />
+                                    <label>Min (KWH) <small class="text-muted">(auto)</small></label>
+                                    <input class="form-control bg-light" type="text" :name="'electricity[' + index + '][min]'" v-model="row.min" readonly tabindex="-1" />
                                 </div>
                             </div>
                             <div class="col-md-3">
                                 <div class="form-group">
-                                    <label>Max (KWH)</label>
-                                    <input class="form-control" type="text" placeholder="Max" :name="'electricity[' + index + '][max]'" v-model="row.max" @input="filterDecimal($event)" />
+                                    <label>Max (KWH) <span style="color:#dc3545;">*</span></label>
+                                    <input class="form-control" type="text" placeholder="e.g. 600" :name="'electricity[' + index + '][max]'" v-model="row.max"
+                                           @input="filterDecimal($event); syncNextTierMin(electricity, index)" />
                                 </div>
                             </div>
                             <div class="col-md-3">
@@ -696,7 +734,10 @@
 
                     <!-- Submit buttons below the bill preview -->
                     <div class="text-center mt-4">
-                        <button type="submit" class="btn btn-warning btn-lg">{{ formData.id ? 'Save / Update' : 'Save Template' }}</button>
+                        <button type="submit" class="btn btn-warning btn-lg" :disabled="saving">
+                            <span v-if="saving"><i class="fa fa-spinner fa-spin mr-1"></i> Saving…</span>
+                            <span v-else>{{ formData.id ? 'Save / Update' : 'Save Template' }}</span>
+                        </button>
                         <a :href="cancelUrl" class="btn btn-secondary btn-lg ml-2">Cancel</a>
                     </div>
                 </form>
@@ -756,6 +797,11 @@ const formData = reactive({
     rates_rebate: '0',
     billing_type: 'PERIOD_TO_PERIOD'  // Default to MONTHLY, options: 'MONTHLY' or 'DATE_TO_DATE'
 });
+
+// Validation / submission state
+const validationErrors = ref([]);
+const submitAttempted  = ref(false);
+const saving           = ref(false);
 
 // Dynamic arrays for tiered pricing - start empty, user adds rows as needed
 const waterIn = ref([]);
@@ -873,26 +919,44 @@ function onRegionChange() {
     }
 }
 
+// Sync the Min of the next tier to the Max of the current tier
+function syncNextTierMin(tiers, index) {
+    if (index + 1 < tiers.value.length) {
+        tiers.value[index + 1].min = tiers.value[index].max;
+    }
+}
+
 // Add/Remove row functions - ALL rows can be removed (no minimum)
 function addWaterInRow() {
-    waterIn.value.push({ min: '', max: '', cost: '' });
+    const prevMax = waterIn.value.length > 0 ? (waterIn.value[waterIn.value.length - 1].max || '') : '0';
+    waterIn.value.push({ min: prevMax, max: '', cost: '' });
 }
 function removeWaterInRow(index) {
     waterIn.value.splice(index, 1);
+    // Re-sync mins after removal
+    for (let i = index; i < waterIn.value.length; i++) {
+        waterIn.value[i].min = i === 0 ? '0' : (waterIn.value[i - 1].max || '');
+    }
 }
 
 function addWaterOutRow() {
-    waterOut.value.push({ min: '', max: '', percentage: '', cost: '' });
+    const prevMax = waterOut.value.length > 0 ? (waterOut.value[waterOut.value.length - 1].max || '') : '0';
+    waterOut.value.push({ min: prevMax, max: '', percentage: '', cost: '' });
 }
 function removeWaterOutRow(index) {
     waterOut.value.splice(index, 1);
 }
 
 function addElectricityRow() {
-    electricity.value.push({ min: '', max: '', cost: '' });
+    const prevMax = electricity.value.length > 0 ? (electricity.value[electricity.value.length - 1].max || '') : '0';
+    electricity.value.push({ min: prevMax, max: '', cost: '' });
 }
 function removeElectricityRow(index) {
     electricity.value.splice(index, 1);
+    // Re-sync mins after removal
+    for (let i = index; i < electricity.value.length; i++) {
+        electricity.value[i].min = i === 0 ? '0' : (electricity.value[i - 1].max || '');
+    }
 }
 
 function addWaterInAdditionalRow() {
@@ -1205,18 +1269,73 @@ function validateTiers() {
     return errors;
 }
 
-// Form submit handler
-function handleSubmit(event) {
-    // Validate tiers before submit
-    const tierErrors = validateTiers();
-    
-    if (tierErrors.length > 0) {
-        event.preventDefault();
-        alert('Tier Validation Errors:\n\n' + tierErrors.join('\n'));
-        return false;
+// Form submit handler — AJAX so data is NEVER lost on error
+async function handleSubmit() {
+    submitAttempted.value = true;
+    validationErrors.value = [];
+    const errors = [];
+
+    // Required top-level fields
+    if (!formData.template_name?.trim()) errors.push('Template Name is required.');
+    if (!formData.region_id)             errors.push('Region / Municipality is required.');
+    if (!formData.start_date)            errors.push('Applicable Start Date is required.');
+    if (!formData.end_date)              errors.push('Applicable End Date is required.');
+    if (!formData.billing_type)          errors.push('Billing Period Type is required.');
+    if (!formData.is_water && !formData.is_electricity) errors.push('Select at least one Meter Type (Water or Electricity).');
+
+    // Tier validation
+    errors.push(...validateTiers());
+
+    if (errors.length > 0) {
+        validationErrors.value = errors;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
     }
-    
-    // Form submits normally via POST
-    return true;
+
+    saving.value = true;
+    try {
+        // Build payload matching what the controller expects
+        const payload = {
+            _token:                   props.csrfToken,
+            id:                       formData.id || undefined,
+            template_name:            formData.template_name,
+            region_id:                formData.region_id,
+            start_date:               formData.start_date,
+            end_date:                 formData.end_date,
+            vat_percentage:           formData.vat_percentage,
+            ratable_value:            formData.ratable_value,
+            is_water:                 formData.is_water  ? '1' : undefined,
+            is_electricity:           formData.is_electricity ? '1' : undefined,
+            water_used:               formData.water_used,
+            electricity_used:         formData.electricity_used,
+            vat_rate:                 formData.vat_rate,
+            rates_rebate:             formData.rates_rebate,
+            billing_type:             formData.billing_type,
+            water_email:              formData.water_email,
+            electricity_email:        formData.electricity_email,
+            waterin:                  waterIn.value,
+            waterout:                 waterOut.value,
+            electricity:              electricity.value,
+            waterin_additional:       waterInAdditional.value,
+            waterout_additional:      waterOutAdditional.value,
+            electricity_additional:   electricityAdditional.value,
+            fixed_costs:              fixedCosts.value,
+            customer_costs:           customerCosts.value,
+        };
+
+        const res = await window.axios.post(props.submitUrl, payload);
+        if (res.data?.success) {
+            window.location.href = res.data.redirect || props.cancelUrl;
+        } else {
+            validationErrors.value = [res.data?.message || 'Save failed — please try again.'];
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    } catch (e) {
+        const msg = e.response?.data?.message || e.message || 'An unexpected error occurred.';
+        validationErrors.value = [msg];
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+        saving.value = false;
+    }
 }
 </script>

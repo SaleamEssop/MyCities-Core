@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -482,5 +483,91 @@ MyCities Administrator
         // UPDATED: Eager load 'region' to support auto-fill
         $sites = Site::with('region')->where('user_id', $request->user_id)->get();
         return response()->json(['status' => 200, 'data' => $sites]);
+    }
+
+    /**
+     * Server-side proxy for ArcGIS MeterReadingSuburbs zone lookup.
+     * Called with WGS84 lat/lon; returns SUBURB, REGION, DISTRICT, MREMAIL.
+     * Proxied to avoid CORS restrictions when called directly from the browser.
+     */
+    public function zoneLookup(Request $request)
+    {
+        $lat = (float) $request->input('lat', 0);
+        $lon = (float) $request->input('lon', 0);
+
+        if (!$lat || !$lon) {
+            return response()->json(['features' => []]);
+        }
+
+        try {
+            $response = Http::timeout(8)->get(
+                'https://services3.arcgis.com/HO0zfySJshlD6Twu/arcgis/rest/services/MeterReadingSuburbs/FeatureServer/0/query',
+                [
+                    'f'              => 'json',
+                    'returnGeometry' => 'false',
+                    'spatialRel'     => 'esriSpatialRelIntersects',
+                    'geometryType'   => 'esriGeometryPoint',
+                    'geometry'       => json_encode(['x' => $lon, 'y' => $lat]),
+                    'inSR'           => 4326,
+                    'outFields'      => '*',
+                ]
+            );
+
+            return response()->json($response->successful() ? $response->json() : ['features' => []]);
+        } catch (\Exception $e) {
+            return response()->json(['features' => []]);
+        }
+    }
+
+    /**
+     * Server-side proxy for Nominatim address autocomplete.
+     * Browser clients cannot set the User-Agent header required by Nominatim's ToS.
+     */
+    public function addressSuggest(Request $request)
+    {
+        $q = trim($request->input('q', ''));
+        if (strlen($q) < 3) {
+            return response()->json([]);
+        }
+
+        try {
+            $response = Http::timeout(5)
+                ->withHeaders([
+                    'User-Agent'   => 'MyCities/1.0 (mycities.co.za; contact@mycities.co.za)',
+                    'Referer'      => 'https://mycities.co.za',
+                    'Accept-Language' => 'en',
+                ])
+                ->get('https://nominatim.openstreetmap.org/search', [
+                    'q'              => $q,
+                    'format'         => 'json',
+                    'countrycodes'   => 'za',
+                    'limit'          => 6,
+                    'addressdetails' => 1,
+                ]);
+
+            if (!$response->successful()) {
+                return response()->json([]);
+            }
+
+            $results = collect($response->json())->map(function ($r) {
+                $a = $r['address'] ?? [];
+                // Build a clean short address: [road, suburb/quarter, city/town]
+                $parts = array_filter([
+                    $a['road']         ?? $a['pedestrian'] ?? $a['path'] ?? null,
+                    $a['suburb']       ?? $a['quarter']    ?? $a['neighbourhood'] ?? null,
+                    $a['city']         ?? $a['town']       ?? $a['village']       ?? null,
+                ]);
+                $text = implode(', ', $parts) ?: ($r['display_name'] ?? '');
+                return [
+                    'text' => $text,
+                    'lat'  => (float) ($r['lat'] ?? 0),
+                    'lon'  => (float) ($r['lon'] ?? 0),
+                ];
+            })->values();
+
+            return response()->json($results);
+        } catch (\Exception $e) {
+            return response()->json([]);
+        }
     }
 }
