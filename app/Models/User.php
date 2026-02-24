@@ -50,6 +50,11 @@ class User extends Authenticatable
         return $this->hasMany(Site::class);
     }
 
+    public function accounts()
+    {
+        return $this->hasMany(\App\Models\Account::class);
+    }
+
     protected static function booted()
     {
         static::deleting(function ($user) {

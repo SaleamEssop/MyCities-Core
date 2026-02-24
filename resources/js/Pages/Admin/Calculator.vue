@@ -14,10 +14,8 @@
         </div>
       </div>
 
-      <!-- ══════════════════ TEST MODE ══════════════════ -->
+      <!-- ══════════ TEST MODE SETUP ══════════ -->
       <template v-if="mode === 'test'">
-
-        <!-- Setup -->
         <div class="card">
           <div class="section-label">Setup</div>
           <div class="fields-row">
@@ -28,8 +26,7 @@
             </div>
             <div class="field">
               <label class="f-label">Start Month</label>
-              <input type="month" v-model="test.startMonth" class="f-input"
-                @change="recomputeTestPeriod" />
+              <input type="month" v-model="test.startMonth" class="f-input" @change="recomputeTestPeriod" />
             </div>
             <div class="field field--grow">
               <label class="f-label">Tariff Selector</label>
@@ -44,308 +41,15 @@
           <div v-if="test.periodStart" class="period-chip-row">
             <span class="chip-period">{{ fmt(test.periodStart) }} → {{ fmt(test.periodEnd) }}</span>
             <span class="chip-days">{{ test.periodDays }} block days</span>
+            <span v-if="hasWater" class="chip-meter chip-meter--water"><i class="fas fa-tint"></i> Water</span>
+            <span v-if="hasElec"  class="chip-meter chip-meter--elec"><i class="fas fa-bolt"></i> Electricity</span>
           </div>
         </div>
 
-        <!-- Start Reading -->
-        <div class="card">
-          <div class="section-label">Start Reading</div>
-          <div class="start-reading-row">
-            <MeterInput
-              v-model="test.startReadingKl"
-              :disabled="test.startConfirmed"
-            />
-            <div class="start-reading-actions">
-              <template v-if="!test.startConfirmed">
-                <div class="confirm-hint">Enter the meter initialization reading, then confirm.</div>
-                <button class="btn-confirm" @click="confirmStartReading">Confirm</button>
-              </template>
-              <div v-else class="confirmed-tag">✓ Confirmed — {{ litresToKlStr(test.startReadingLitres) }} kL</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── Period blocks ── -->
-        <template v-if="test.startConfirmed">
-          <div
-            v-for="(period, pi) in test.periods"
-            :key="pi"
-            class="period-block"
-            :class="period.expanded ? 'period-block--expanded' : 'period-block--collapsed'"
-          >
-            <!-- Clickable header (always visible) -->
-            <div class="period-hdr" @click="period.expanded = !period.expanded">
-              <div class="period-hdr-left">
-                <div class="period-hdr-title">
-                  Period {{ pi + 1 }}
-                  <span class="period-hdr-dates">
-                    {{ fmt(period.start) }} → {{ fmt(period.end) }}
-                    <span class="chip-days">{{ period.blockDays }} days</span>
-                  </span>
-                </div>
-                <!-- Collapsed summary -->
-                <div v-show="!period.expanded" class="period-collapsed-summary">
-                  <span class="cs-item">
-                    <span class="cs-label">Opening:</span>
-                    <span class="cs-val">{{ litresToKlStr(period.openingLitres) }} kL</span>
-                  </span>
-                  <span class="cs-sep">›</span>
-                  <span class="cs-item" v-if="period.provisionalClosingLitres != null">
-                    <span class="cs-label">{{ period.calculatedClosingLitres != null ? 'Calculated:' : 'Provisional:' }}</span>
-                    <span class="cs-val" :class="period.calculatedClosingLitres != null ? 'val-calculated' : 'val-provisional'">
-                      {{ litresToKlStr(period.calculatedClosingLitres ?? period.provisionalClosingLitres) }} kL
-                    </span>
-                  </span>
-                  <span class="cs-sep" v-if="period.dailyUsage != null">·</span>
-                  <span class="cs-item" v-if="period.dailyUsage != null">
-                    <span class="cs-label">Daily:</span>
-                    <span class="cs-val">{{ fmtN(period.dailyUsage, 0) }} L/day</span>
-                  </span>
-                  <span class="cs-sep" v-if="period.stats">·</span>
-                  <span class="cs-item" v-if="period.stats">
-                    <span class="cs-label">Projected:</span>
-                    <span class="cs-val cs-val--bill">R {{ fmtMoney(period.stats.projectedR) }}</span>
-                  </span>
-                </div>
-              </div>
-              <div class="period-hdr-right">
-                <span class="period-chevron">
-                  <i :class="['fas', period.expanded ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
-                </span>
-              </div>
-            </div>
-
-            <!-- ── Expanded content ── -->
-            <template v-if="period.expanded">
-
-              <!-- 1. Opening label row -->
-              <div class="period-opening-row">
-                <span class="por-label">{{ pi === 0 ? 'Start Reading' : 'Opening Reading' }}</span>
-                <span class="por-val">{{ litresToKlStr(period.openingLitres) }} kL</span>
-                <span
-                  v-if="pi > 0 && prevPeriod(pi)?.provisionalClosingSnapshot != null"
-                  class="por-was"
-                >
-                  Provisional — {{ litresToKlStr(prevPeriod(pi).provisionalClosingSnapshot) }} updated
-                </span>
-              </div>
-
-              <!-- 2. Stats bar (TOP) -->
-              <div class="stats-bar">
-                <div class="stat-cell">
-                  <div class="stat-label">Daily Usage</div>
-                  <div class="stat-val">{{ period.dailyUsage != null ? fmtN(period.dailyUsage, 0) + ' L' : '_ _' }}</div>
-                </div>
-                <div class="stat-cell">
-                  <div class="stat-label">Current Usage</div>
-                  <div class="stat-val">{{ period.stats ? 'R ' + fmtMoney(period.stats.currentR) : '_ _' }}</div>
-                </div>
-                <div class="stat-cell">
-                  <div class="stat-label">Projected Usage</div>
-                  <div class="stat-val">{{ period.stats ? 'R ' + fmtMoney(period.stats.projectedR) : '_ _' }}</div>
-                </div>
-              </div>
-
-              <!-- Adjustment notice for periods 2+ -->
-              <div
-                v-if="period.adjustmentBroughtForward"
-                class="adjustment-notice"
-                :class="period.adjustmentBroughtForward > 0 ? 'adj-shortfall' : 'adj-surplus'"
-              >
-                <i class="fas fa-exchange-alt"></i>
-                Adjustment from Period {{ pi }} carried forward:
-                <strong>{{ period.adjustmentBroughtForward > 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(period.adjustmentBroughtForward)) }}</strong>
-                — included in projected total
-              </div>
-
-              <!-- 3. Readings (MIDDLE) -->
-              <div class="readings-section">
-                <div class="readings-header">
-                  <span class="readings-header-label">Readings</span>
-                  <span class="readings-header-hint">enter in kL · format 0000.00</span>
-                </div>
-                <div
-                  v-for="(r, ri) in period.readings"
-                  :key="ri"
-                  class="reading-row"
-                  :class="r.error && 'reading-row--error'"
-                >
-                  <div class="date-wrap">
-                    <i class="fas fa-calendar-alt date-icon"></i>
-                    <input
-                      type="date"
-                      v-model="r.date"
-                      class="f-input r-date"
-                      :min="period.start"
-                      :max="period.end"
-                      @change="recomputePeriod(period, pi)"
-                    />
-                  </div>
-                  <MeterInput
-                    v-model="r.klStr"
-                    @change="onReadingInput(period, r, pi)"
-                  />
-                  <div class="r-litres" v-if="r.litres && !r.error">{{ fmtN(r.litres) }} L</div>
-                  <div class="r-seq-error" v-if="r.error">
-                    <i class="fas fa-exclamation-triangle"></i> {{ r.error }}
-                  </div>
-                  <button class="btn-rm" @click="period.readings.splice(ri, 1); recomputePeriod(period, pi)">
-                    <i class="fas fa-times"></i>
-                  </button>
-                </div>
-                <div v-if="period.readings.length === 0" class="empty-readings">
-                  No readings yet — click "+ Add Reading"
-                </div>
-              </div>
-
-              <!-- 4. Sectors -->
-              <div v-if="period.sectors.length > 0" class="sectors-section">
-                <div class="sectors-label">Sectors</div>
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>From</th><th>To</th>
-                      <th class="num">Block Days</th>
-                      <th class="num">Usage (L)</th>
-                      <th class="num">Daily Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(s, si) in period.sectors" :key="si">
-                      <td>{{ fmt(s.start) }}</td>
-                      <td>{{ fmt(s.end) }}</td>
-                      <td class="num">{{ s.block_days }}</td>
-                      <td class="num">{{ fmtN(s.total_usage) }}</td>
-                      <td class="num">{{ fmtN(s.daily_avg, 1) }} L/day</td>
-                    </tr>
-                    <tr class="total-row">
-                      <td colspan="2">Total</td>
-                      <td class="num">{{ period.sectors.reduce((a,s)=>a+s.block_days,0) }}</td>
-                      <td class="num">{{ fmtN(period.sectors.reduce((a,s)=>a+s.total_usage,0)) }}</td>
-                      <td></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <!-- 5. Actions -->
-              <div class="period-actions">
-                <button class="btn-add-reading" @click="addReadingToPeriod(period)">
-                  <i class="fas fa-plus"></i> Add Reading
-                </button>
-                <button class="btn-calc" @click="calculatePeriod(pi)"
-                  :disabled="!canCalculatePeriod(period) || period.calculating">
-                  {{ period.calculating ? 'Calculating…' : 'Calculate' }}
-                </button>
-              </div>
-              <div v-if="period.calcError" class="msg-error">{{ period.calcError }}</div>
-
-              <!-- 6. Closing bar (BOTTOM) -->
-              <div class="closing-bar" :class="period.calculatedClosingLitres != null && 'closing-bar--resolved'">
-                <div class="closing-cell">
-                  <div class="closing-cell-label">Closing provisional</div>
-                  <div class="closing-cell-val val-provisional">
-                    {{ period.provisionalClosingLitres != null ? litresToKlStr(period.provisionalClosingLitres) : '_ _' }}
-                  </div>
-                  <div class="closing-cell-sub" v-if="period.provisionalBillR != null">
-                    R {{ fmtMoney(period.provisionalBillR) }}
-                  </div>
-                  <div class="closing-cell-sub" v-else-if="period.provisionalClosingLitres != null">kL</div>
-                </div>
-                <div class="closing-cell">
-                  <div class="closing-cell-label">Closing calculated</div>
-                  <div class="closing-cell-val" :class="period.calculatedClosingLitres != null ? 'val-calculated' : 'val-empty'">
-                    {{ period.calculatedClosingLitres != null ? litresToKlStr(period.calculatedClosingLitres) : '_ _' }}
-                  </div>
-                  <div class="closing-cell-sub" v-if="period.calculatedBillR != null">
-                    R {{ fmtMoney(period.calculatedBillR) }}
-                  </div>
-                  <div class="closing-cell-sub" v-else-if="period.calculatedClosingLitres != null">kL</div>
-                </div>
-                <div class="closing-cell">
-                  <div class="closing-cell-label">Adjustment</div>
-                  <div class="closing-cell-val" :class="adjustmentClass(period)">
-                    {{ formatAdjustment(period) }}
-                  </div>
-                  <div class="closing-cell-sub" v-if="period.calculatedClosingLitres != null">
-                    {{ (period.calculatedClosingLitres - period.provisionalClosingLitres) >= 0 ? 'shortfall' : 'surplus' }}
-                  </div>
-                </div>
-              </div>
-
-              <!-- Billing section — collapses with the period -->
-              <div v-if="period.bill" class="period-billing">
-                <div class="period-billing-header">
-                  <i class="fas fa-file-invoice-dollar"></i>
-                  Bill · Period {{ pi + 1 }}: {{ fmt(period.start) }} → {{ fmt(period.end) }}
-                </div>
-                <div class="bill-grid">
-                  <div class="bill-stat">
-                    <div class="bill-stat-label">Total Usage</div>
-                    <div class="bill-stat-val">{{ fmtN(period.bill.consumption_litres) }} L</div>
-                  </div>
-                  <div class="bill-stat">
-                    <div class="bill-stat-label">Usage Charge</div>
-                    <div class="bill-stat-val">R {{ fmtMoney(period.bill.usage_charge) }}</div>
-                  </div>
-                  <div class="bill-stat">
-                    <div class="bill-stat-label">Fixed Charges</div>
-                    <div class="bill-stat-val">R {{ fmtMoney(period.bill.fixed_total) }}</div>
-                  </div>
-                  <div class="bill-stat">
-                    <div class="bill-stat-label">VAT</div>
-                    <div class="bill-stat-val">R {{ fmtMoney(period.bill.vat_amount) }}</div>
-                  </div>
-                  <div v-if="period.bill.adjustment_brought_forward" class="bill-stat">
-                    <div class="bill-stat-label">Adjustment b/f</div>
-                    <div class="bill-stat-val"
-                      :class="period.bill.adjustment_brought_forward > 0 ? 'val-shortfall' : 'val-surplus'">
-                      {{ period.bill.adjustment_brought_forward > 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(period.bill.adjustment_brought_forward)) }}
-                    </div>
-                  </div>
-                  <div class="bill-stat bill-stat--total">
-                    <div class="bill-stat-label">BILL TOTAL</div>
-                    <div class="bill-stat-val">R {{ fmtMoney(period.bill.bill_total) }}</div>
-                  </div>
-                </div>
-                <div v-if="period.bill.tier_breakdown?.length" class="tier-section">
-                  <div class="tier-label">Tier Breakdown</div>
-                  <table class="data-table">
-                    <thead>
-                      <tr>
-                        <th>Tier</th>
-                        <th class="num">Units (kL)</th>
-                        <th class="num">Rate (R/kL)</th>
-                        <th class="num">Charge</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(t, i) in period.bill.tier_breakdown" :key="i">
-                        <td>Tier {{ i + 1 }}</td>
-                        <td class="num">{{ fmtN(t.units_kl ?? t.units / 1000, 3) }}</td>
-                        <td class="num">{{ t.rate }}</td>
-                        <td class="num">R {{ fmtMoney(t.amount) }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-            </template><!-- end expanded -->
-          </div><!-- end period-block -->
-
-          <!-- Add Period — below all period blocks (and their bills) -->
-          <button class="btn-add-period-bottom" @click="addPeriod">
-            <i class="fas fa-plus"></i> Add Period
-          </button>
-
-        </template><!-- end startConfirmed -->
       </template>
 
-      <!-- ══════════════════ USER + ACCOUNT MODE ══════════════════ -->
-      <template v-else>
-
-        <!-- Select account + meter -->
+      <!-- ══════════ ACCOUNT MODE SETUP ══════════ -->
+      <template v-if="mode === 'account'">
         <div class="card">
           <div class="section-label">Select Account</div>
           <div class="fields-row">
@@ -358,290 +62,651 @@
             </div>
             <div class="field field--grow">
               <label class="f-label">Account</label>
-              <select v-model="ua.accountId" class="f-input" :disabled="!ua.userId" @change="onAccountChange">
+              <select v-model="ua.accountId" class="f-input" :disabled="!ua.userId" @change="loadAccount">
                 <option value="">— Select Account —</option>
                 <option v-for="a in filteredAccounts" :key="a.id" :value="a.id">
                   {{ a.account_name }} ({{ a.account_number }})
                 </option>
               </select>
             </div>
-            <div class="field field--grow">
-              <label class="f-label">Meter</label>
-              <select v-model="ua.meterId" class="f-input" :disabled="!ua.accountId" @change="loadMeter">
-                <option value="">— Select Meter —</option>
-                <option v-for="m in filteredMeters" :key="m.id" :value="m.id">
-                  {{ m.meter_title || m.meter_number }}
-                </option>
-              </select>
-            </div>
+          </div>
+          <div v-if="ua.loading" class="ua-loading">
+            <i class="fas fa-circle-notch fa-spin"></i> Loading account data…
+          </div>
+          <div v-if="ua.accountData" class="ua-meta">
+            <span class="ua-meta-item">
+              <span class="ua-meta-label">Bill Day</span>
+              <span class="ua-meta-val">{{ ua.accountData.account.bill_day }}</span>
+            </span>
+            <span class="ua-meta-item" v-if="ua.accountData.tariff">
+              <span class="ua-meta-label">Tariff</span>
+              <span class="ua-meta-val">{{ ua.accountData.tariff.template_name }}</span>
+            </span>
+            <span v-for="m in ua.accountData.meters" :key="m.id" class="ua-meta-item">
+              <span class="ua-meta-label">
+                <i :class="m.meter_type === 'water' ? 'fas fa-tint' : 'fas fa-bolt'"></i>
+                {{ m.meter_type === 'water' ? 'Water' : 'Electricity' }}
+              </span>
+              <span class="ua-meta-val">{{ m.meter_number }}</span>
+            </span>
           </div>
         </div>
+      </template>
 
-        <template v-if="ua.meterData">
+      <!-- ══════════════════════════════════════════════════
+           TOP-LEVEL METER TABS (Water / Electricity)
+           Visible as soon as a tariff is selected in test mode, or account is loaded
+           ══════════════════════════════════════════════════ -->
+      <div
+        v-if="(mode === 'test' && !!test.periodStart) || (mode === 'account' && activePeriods.length > 0)"
+        class="top-meter-tabs"
+      >
+        <button
+          :class="['top-meter-tab top-meter-tab--water', (mode==='test' ? test.activeMeterTab : ua.activeMeterTab) === 'water' ? 'top-meter-tab--on' : '']"
+          @click="mode==='test' ? (test.activeMeterTab='water') : (ua.activeMeterTab='water')"
+        >
+          <i class="fas fa-tint"></i> Water
+        </button>
+        <button
+          :class="['top-meter-tab top-meter-tab--elec', (mode==='test' ? test.activeMeterTab : ua.activeMeterTab) === 'electricity' ? 'top-meter-tab-elec--on' : '']"
+          @click="mode==='test' ? (test.activeMeterTab='electricity') : (ua.activeMeterTab='electricity')"
+        >
+          <i class="fas fa-bolt"></i> Electricity
+        </button>
+      </div>
 
-          <!-- ── Current period ── -->
-          <div
-            class="period-block period-block--open"
-            :class="ua.currentExpanded ? 'period-block--expanded' : 'period-block--collapsed'"
-          >
-            <div class="period-hdr" @click="ua.currentExpanded = !ua.currentExpanded">
-              <div class="period-hdr-left">
-                <div class="period-hdr-title">
-                  Current Period
-                  <span class="chip-open">OPEN</span>
-                  <span class="period-hdr-dates">
-                    {{ fmt(ua.meterData.current_period.start) }} → {{ fmt(ua.meterData.current_period.end) }}
-                    <span class="chip-days">{{ ua.meterData.current_period.block_days }} days</span>
-                  </span>
-                </div>
-                <div v-show="!ua.currentExpanded" class="period-collapsed-summary">
-                  <span class="cs-item" v-if="ua.meterData.opening_provisional">
-                    <span class="cs-label">Opening:</span>
-                    <span class="cs-val">{{ litresToKlStr(ua.meterData.opening_provisional.value) }} kL</span>
-                  </span>
-                  <span class="cs-item" v-if="ua.meterData.closing_provisional != null">
-                    <span class="cs-sep">›</span>
-                    <span class="cs-label">Provisional:</span>
-                    <span class="cs-val val-provisional">{{ litresToKlStr(ua.meterData.closing_provisional) }} kL</span>
-                  </span>
-                </div>
-              </div>
-              <div class="period-hdr-right">
-                <span class="period-chevron">
-                  <i :class="['fas', ua.currentExpanded ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
+      <!-- ══════════════════════════════════════════════════
+           SHARED PERIOD BLOCKS (test + account use same template)
+           ══════════════════════════════════════════════════ -->
+      <template v-if="activePeriods.length > 0">
+        <div
+          v-for="(period, pi) in activePeriods"
+          :key="pi"
+          class="period-block"
+          :class="[
+            period.expanded ? 'period-block--expanded' : 'period-block--collapsed',
+            pi < activePeriods.length - 1 ? 'period-block--closed' : 'period-block--open',
+          ]"
+        >
+          <!-- ── Collapsible header ── -->
+          <div class="period-hdr" @click="onPeriodHeaderClick(period, pi)">
+            <div class="period-hdr-left">
+              <div class="period-hdr-title">
+                Period {{ pi + 1 }}
+                <span v-if="pi === activePeriods.length - 1 && mode === 'account'" class="chip-open">OPEN</span>
+                <span class="period-hdr-dates">
+                  {{ fmt(period.start) }} → {{ fmt(period.end) }}
+                  <span class="chip-days">{{ period.blockDays }} days</span>
                 </span>
               </div>
-            </div>
-
-            <template v-if="ua.currentExpanded">
-              <!-- Anchor grid -->
-              <div class="anchor-grid">
-                <div class="anchor-cell anchor-cell--open">
-                  <div class="anchor-cell-label">Opening Provisional</div>
-                  <div class="anchor-cell-val">
-                    {{ ua.meterData.opening_provisional ? litresToKlStr(ua.meterData.opening_provisional.value) : '_ _' }}
-                  </div>
-                  <div class="anchor-cell-sub">{{ ua.meterData.opening_provisional?.source }}</div>
-                </div>
-                <div class="anchor-cell" :class="!ua.meterData.opening_actual && 'anchor-cell--pending'">
-                  <div class="anchor-cell-label">Opening Actual</div>
-                  <div class="anchor-cell-val" :class="ua.meterData.opening_actual ? 'val-calculated' : 'val-empty'">
-                    {{ ua.meterData.opening_actual ? litresToKlStr(ua.meterData.opening_actual.value) : '_ _' }}
-                  </div>
-                  <div class="anchor-cell-sub">{{ ua.meterData.opening_actual ? ua.meterData.opening_actual.source : 'populated by straddle' }}</div>
-                </div>
-                <div class="anchor-cell">
-                  <div class="anchor-cell-label">Closing Provisional</div>
-                  <div class="anchor-cell-val" :class="ua.meterData.closing_provisional != null ? 'val-provisional' : 'val-empty'">
-                    {{ ua.meterData.closing_provisional != null ? litresToKlStr(ua.meterData.closing_provisional) : '_ _' }}
-                  </div>
-                  <div class="anchor-cell-sub">live estimate</div>
-                </div>
-                <div class="anchor-cell" :class="!ua.meterData.closing_actual && 'anchor-cell--pending'">
-                  <div class="anchor-cell-label">Closing Actual</div>
-                  <div class="anchor-cell-val" :class="ua.meterData.closing_actual != null ? 'val-calculated' : 'val-empty'">
-                    {{ ua.meterData.closing_actual != null ? litresToKlStr(ua.meterData.closing_actual) : '_ _' }}
-                  </div>
-                  <div class="anchor-cell-sub">{{ ua.meterData.closing_actual != null ? 'reading on period end' : 'populated by next period straddle' }}</div>
-                </div>
-              </div>
-
-              <!-- Readings list -->
-              <div class="readings-section">
-                <div class="readings-header">
-                  <span class="readings-header-label">Readings</span>
-                  <span class="readings-header-hint">enter in kL · format 0000.00</span>
-                </div>
-                <div v-for="(r, i) in ua.meterData.period_readings" :key="r.id" class="reading-row">
-                  <span class="r-date-display">{{ fmt(r.date) }}</span>
-                  <span class="r-kl-display">{{ litresToKlStr(r.value) }} kL</span>
-                  <span class="r-litres-display">{{ fmtN(r.value) }} L</span>
-                  <span class="r-sector-avg" v-if="ua.meterData.sectors[i]">
-                    {{ fmtN(ua.meterData.sectors[i].daily_avg, 1) }} L/day
+              <!-- Collapsed summary -->
+              <div v-show="!period.expanded" class="period-collapsed-summary">
+                <span v-if="period.water" class="cs-item">
+                  <i class="fas fa-tint" style="color:#3294B8;font-size:.7rem;"></i>
+                  <span class="cs-val">
+                    {{ period.water.calculatedClosingLitres != null
+                      ? litresToKlStr(period.water.calculatedClosingLitres)
+                      : period.water.provisionalClosingLitres != null
+                        ? litresToKlStr(period.water.provisionalClosingLitres) : '_ _' }} kL
                   </span>
-                  <button class="btn-rm" @click="deleteReading(r.id)">
-                    <i class="fas fa-times"></i>
-                  </button>
-                </div>
-                <div v-if="ua.meterData.period_readings.length === 0" class="empty-readings">No readings yet.</div>
-
-                <!-- Add reading form -->
-                <div class="add-reading-form">
-                  <div class="date-wrap">
-                    <i class="fas fa-calendar-alt date-icon"></i>
-                    <input
-                      type="date"
-                      v-model="ua.newReadingDate"
-                      class="f-input r-date"
-                      :min="ua.meterData.current_period.start"
-                      :max="ua.meterData.current_period.end"
-                    />
-                  </div>
-                  <MeterInput
-                    v-model="ua.newReadingKl"
-                    @change="ua.newReadingLitres = klStrToLitres(ua.newReadingKl)"
-                  />
-                  <div class="r-litres" v-if="ua.newReadingLitres">{{ fmtN(ua.newReadingLitres) }} L</div>
-                  <button class="btn-save-reading" @click="addReading"
-                    :disabled="!ua.newReadingDate">
-                    <i class="fas fa-save"></i> Save
-                  </button>
-                </div>
-                <div v-if="ua.readingError" class="msg-error">{{ ua.readingError }}</div>
+                </span>
+                <span v-if="period.electricity" class="cs-sep">·</span>
+                <span v-if="period.electricity" class="cs-item">
+                  <i class="fas fa-bolt" style="color:#d69e2e;font-size:.7rem;"></i>
+                  <span class="cs-val">
+                    {{ period.electricity.calculatedClosingKwh != null
+                      ? fmtN(period.electricity.calculatedClosingKwh)
+                      : period.electricity.provisionalClosingKwh != null
+                        ? fmtN(period.electricity.provisionalClosingKwh) : '_ _' }} kWh
+                  </span>
+                </span>
+                <template v-if="period.bill">
+                  <span class="cs-sep">·</span>
+                  <span class="cs-item">
+                    <span class="cs-label">Bill:</span>
+                    <span class="cs-val cs-val--bill">R {{ fmtMoney(period.bill.grand_total) }}</span>
+                  </span>
+                </template>
               </div>
+            </div>
+            <div class="period-hdr-right">
+              <span class="period-chevron">
+                <i :class="['fas', period.expanded ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
+              </span>
+            </div>
+          </div>
 
-              <!-- Sectors -->
-              <div v-if="ua.meterData.sectors.length > 0" class="sectors-section">
-                <div class="sectors-label">Sectors</div>
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>From</th><th>To</th>
-                      <th class="num">Block Days</th>
-                      <th class="num">Usage (L)</th>
-                      <th class="num">Daily Avg</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(s, i) in ua.meterData.sectors" :key="i">
-                      <td>{{ fmt(s.start) }}</td>
-                      <td>{{ fmt(s.end) }}</td>
-                      <td class="num">{{ s.block_days }}</td>
-                      <td class="num">{{ fmtN(s.total_usage) }}</td>
-                      <td class="num">{{ fmtN(s.daily_avg, 1) }} L/day</td>
-                    </tr>
-                    <tr class="total-row">
-                      <td colspan="2">Total</td>
-                      <td class="num">{{ ua.meterData.sectors.reduce((a,s)=>a+s.block_days,0) }}</td>
-                      <td class="num">{{ fmtN(ua.meterData.sectors.reduce((a,s)=>a+s.total_usage,0)) }}</td>
-                      <td></td>
-                    </tr>
-                  </tbody>
-                </table>
-                <!-- Bar graph -->
-                <div class="usage-graph" v-if="ua.meterData.sectors.length > 1">
-                  <div class="graph-title">Daily Usage by Sector (L/day)</div>
-                  <div class="graph-bars">
-                    <div v-for="(s, i) in ua.meterData.sectors" :key="i" class="graph-bar-col">
-                      <div class="graph-bar-num">{{ fmtN(s.daily_avg, 0) }}</div>
-                      <div class="graph-bar" :style="{ height: graphBarH(s.daily_avg) + 'px' }"></div>
-                      <div class="graph-bar-date">{{ fmtShort(s.end) }}</div>
-                    </div>
-                  </div>
+          <!-- ── Expanded content ── -->
+          <template v-if="period.expanded">
+
+
+            <!-- ══ WATER CONTENT ══ -->
+            <!-- No-water message when tariff has no water support -->
+            <div v-if="activeMeter(period) === 'water' && (mode === 'test' ? !hasWater : !period.water)" class="tab-no-data">
+              <i class="fas fa-info-circle"></i>
+              Chosen tariff template does not contain water data.
+            </div>
+            <!-- Water meter initialization form (test mode, not yet initialized in this or earlier period) -->
+            <div v-else-if="activeMeter(period) === 'water' && mode === 'test' && !isMeterInitialized(pi, 'water')" class="meter-init-form meter-init-form--water">
+              <div class="init-form-title"><i class="fas fa-tint"></i> Initialize Water Meter</div>
+              <div class="init-form-row">
+                <MeterInput v-model="period._wInitReading" />
+                <div class="date-wrap">
+                  <i class="fas fa-calendar-alt date-icon"></i>
+                  <input type="date" v-model="period._wInitDate" class="f-input r-date"
+                    :min="period.start" :max="period.end" />
                 </div>
+                <button class="btn-init btn-init--water" @click="confirmMeterInit(period, pi, 'water')">
+                  <i class="fas fa-check"></i> Initialize
+                </button>
+              </div>
+            </div>
+            <template v-else-if="activeMeter(period) === 'water' && period.water">
+
+              <!-- Opening -->
+              <div class="period-opening-row">
+                <span class="por-label">{{ pi === 0 && mode === 'test' ? 'Start Reading' : 'Opening Reading' }}</span>
+                <span class="por-val">{{ litresToKlStr(period.water.openingLitres) }} kL</span>
+                <span
+                  v-if="pi > 0 && prevPeriod(pi)?.water?.provisionalClosingSnapshot != null"
+                  class="por-was"
+                >
+                  Provisional — {{ litresToKlStr(prevPeriod(pi).water.provisionalClosingSnapshot) }} updated
+                </span>
               </div>
 
               <!-- Stats bar -->
               <div class="stats-bar">
                 <div class="stat-cell">
                   <div class="stat-label">Daily Usage</div>
-                  <div class="stat-val">
-                    {{ ua.meterData.sectors.length > 0
-                      ? fmtN(ua.meterData.sectors[ua.meterData.sectors.length-1].daily_avg, 0) + ' L'
-                      : '_ _' }}
-                  </div>
+                  <div class="stat-val">{{ period.water.dailyUsage != null ? fmtN(period.water.dailyUsage, 0) + ' L' : '_ _' }}</div>
                 </div>
                 <div class="stat-cell">
-                  <div class="stat-label">Closing Provisional</div>
-                  <div class="stat-val">
-                    {{ ua.meterData.closing_provisional != null ? litresToKlStr(ua.meterData.closing_provisional) + ' kL' : '_ _' }}
-                  </div>
+                  <div class="stat-label">Current Usage</div>
+                  <div class="stat-val">{{ period.water.stats && period.water.stats.currentR > 0 ? 'R ' + fmtMoney(period.water.stats.currentR) : '_ _' }}</div>
                 </div>
                 <div class="stat-cell">
-                  <div class="stat-label">Closing Actual</div>
-                  <div class="stat-val">
-                    {{ ua.meterData.closing_actual != null ? litresToKlStr(ua.meterData.closing_actual) + ' kL' : '_ _' }}
-                  </div>
+                  <div class="stat-label">Projected Usage</div>
+                  <div class="stat-val">{{ period.water.stats ? 'R ' + fmtMoney(period.water.stats.projectedR) : '_ _' }}</div>
                 </div>
               </div>
-            </template>
-          </div><!-- end current period -->
 
-          <!-- ── Previous periods ── -->
-          <div
-            v-for="(p, pi) in ua.meterData.previous_periods"
-            :key="p.id"
-            class="period-block period-block--closed"
-            :class="p.expanded ? 'period-block--expanded' : 'period-block--collapsed'"
-          >
-            <div class="period-hdr" @click="p.expanded = !p.expanded">
-              <div class="period-hdr-left">
-                <div class="period-hdr-title">
-                  Previous Period
-                  <span :class="['status-badge', 'status-' + (p.status || 'provisional').toLowerCase()]">
-                    {{ p.status || 'PROVISIONAL' }}
-                  </span>
-                  <span class="period-hdr-dates">{{ fmt(p.period_start_date) }} → {{ fmt(p.period_end_date) }}</span>
+              <!-- Adjustment notice -->
+              <div
+                v-if="period.water.adjustmentBroughtForward"
+                class="adjustment-notice"
+                :class="period.water.adjustmentBroughtForward > 0 ? 'adj-shortfall' : 'adj-surplus'"
+              >
+                <i class="fas fa-exchange-alt"></i>
+                Adjustment from Period {{ pi }} carried forward:
+                <strong>{{ period.water.adjustmentBroughtForward > 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(period.water.adjustmentBroughtForward)) }}</strong>
+              </div>
+
+              <!-- Readings -->
+              <div class="readings-section">
+                <div class="readings-header">
+                  <span class="readings-header-label">Readings</span>
+                  <span class="readings-header-hint">{{ mode === 'test' ? 'enter in kL · format 0000.00' : 'kL' }}</span>
                 </div>
-                <div v-show="!p.expanded" class="period-collapsed-summary">
-                  <span class="cs-item">
-                    <span class="cs-label">Consumption:</span>
-                    <span class="cs-val">{{ litresToKlStr(p.consumption) }} kL</span>
-                  </span>
-                  <span class="cs-sep">·</span>
-                  <span class="cs-item">
-                    <span class="cs-label">Bill:</span>
-                    <span class="cs-val cs-val--bill">R {{ fmtMoney(p.total_amount) }}</span>
-                  </span>
+                <!-- Test mode: editable -->
+                <template v-if="mode === 'test'">
+                  <div
+                    v-for="(r, ri) in period.water.readings"
+                    :key="ri"
+                    class="reading-row"
+                    :class="r.error && 'reading-row--error'"
+                  >
+                    <div class="date-wrap">
+                      <i class="fas fa-calendar-alt date-icon"></i>
+                      <input type="date" v-model="r.date" class="f-input r-date"
+                        :min="period.start" :max="period.end"
+                        @change="recomputePeriodWater(period, pi)" />
+                    </div>
+                    <MeterInput v-model="r.klStr" @change="onWaterInput(period, r, pi)" />
+                    <div class="r-litres" v-if="r.litres && !r.error">{{ fmtN(r.litres) }} L</div>
+                    <div class="r-seq-error" v-if="r.error">
+                      <i class="fas fa-exclamation-triangle"></i> {{ r.error }}
+                    </div>
+                    <button class="btn-rm" @click="period.water.readings.splice(ri, 1); recomputePeriodWater(period, pi)">
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </div>
+                  <div v-if="period.water.readings.length === 0" class="empty-readings">
+                    No readings yet — click "+ Add Reading"
+                  </div>
+                </template>
+                <!-- Account mode: read-only -->
+                <template v-else>
+                  <div v-for="r in period.water.readings" :key="r.id" class="reading-row">
+                    <span class="r-date-display">{{ fmt(r.date) }}</span>
+                    <span class="r-kl-display">{{ litresToKlStr(r.value) }} kL</span>
+                    <span class="r-litres-display">{{ fmtN(r.value) }} L</span>
+                  </div>
+                  <div v-if="period.water.readings.length === 0" class="empty-readings">No intra-period readings.</div>
+                </template>
+              </div>
+
+              <!-- Sectors -->
+              <div v-if="period.water.sectors.length" class="sectors-section">
+                <div class="sectors-label">Sectors</div>
+                <table class="data-table">
+                  <thead>
+                    <tr><th>From</th><th>To</th><th class="num">Block Days</th><th class="num">Usage (L)</th><th class="num">Daily Avg</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(s, si) in period.water.sectors" :key="si">
+                      <td>{{ fmt(s.start) }}</td><td>{{ fmt(s.end) }}</td>
+                      <td class="num">{{ s.block_days }}</td>
+                      <td class="num">{{ fmtN(s.total_usage) }}</td>
+                      <td class="num">{{ fmtN(s.daily_avg, 1) }} L/day</td>
+                    </tr>
+                    <tr class="total-row">
+                      <td colspan="2">Total</td>
+                      <td class="num">{{ period.water.sectors.reduce((a,s)=>a+s.block_days,0) }}</td>
+                      <td class="num">{{ fmtN(period.water.sectors.reduce((a,s)=>a+s.total_usage,0)) }}</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Closing bar (water) -->
+              <div class="closing-bar" :class="period.water.calculatedClosingLitres != null && 'closing-bar--resolved'">
+                <div class="closing-cell">
+                  <div class="closing-cell-label">Closing provisional</div>
+                  <div class="closing-cell-val val-provisional">
+                    {{ period.water.provisionalClosingLitres != null ? litresToKlStr(period.water.provisionalClosingLitres) : '_ _' }}
+                  </div>
+                  <div class="closing-cell-sub" v-if="period.water.provisionalBillR != null">R {{ fmtMoney(period.water.provisionalBillR) }}</div>
+                  <div class="closing-cell-sub" v-else-if="period.water.provisionalClosingLitres != null">kL</div>
+                </div>
+                <div class="closing-cell">
+                  <div class="closing-cell-label">Closing calculated</div>
+                  <div class="closing-cell-val" :class="period.water.calculatedClosingLitres != null ? 'val-calculated' : 'val-empty'">
+                    {{ period.water.calculatedClosingLitres != null ? litresToKlStr(period.water.calculatedClosingLitres) : '_ _' }}
+                  </div>
+                  <div class="closing-cell-sub" v-if="period.water.calculatedBillR != null">R {{ fmtMoney(period.water.calculatedBillR) }}</div>
+                  <div class="closing-cell-sub" v-else-if="period.water.calculatedClosingLitres != null">kL</div>
+                </div>
+                <div class="closing-cell">
+                  <div class="closing-cell-label">Adjustment</div>
+                  <div class="closing-cell-val" :class="waterAdjClass(period)">{{ formatWaterAdj(period) }}</div>
+                  <div class="closing-cell-sub" v-if="period.water.calculatedClosingLitres != null">
+                    {{ (period.water.calculatedClosingLitres - period.water.provisionalClosingLitres) >= 0 ? 'shortfall' : 'surplus' }}
+                  </div>
                 </div>
               </div>
-              <div class="period-hdr-right">
-                <span class="period-chevron">
-                  <i :class="['fas', p.expanded ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
-                </span>
+            </template><!-- /water -->
+
+            <!-- ══ ELECTRICITY CONTENT ══ -->
+            <!-- No-electricity message when tariff has no electricity support -->
+            <div v-if="activeMeter(period) === 'electricity' && (mode === 'test' ? !hasElec : !period.electricity)" class="tab-no-data">
+              <i class="fas fa-info-circle"></i>
+              Chosen tariff template does not contain electricity data.
+            </div>
+            <!-- Electricity meter initialization form (test mode, not yet initialized in this or earlier period) -->
+            <div v-else-if="activeMeter(period) === 'electricity' && mode === 'test' && !isMeterInitialized(pi, 'electricity')" class="meter-init-form meter-init-form--elec">
+              <div class="init-form-title"><i class="fas fa-bolt"></i> Initialize Electricity Meter</div>
+              <div class="init-form-row">
+                <ElecInput v-model="period._eInitReading" />
+                <div class="date-wrap">
+                  <i class="fas fa-calendar-alt date-icon"></i>
+                  <input type="date" v-model="period._eInitDate" class="f-input r-date"
+                    :min="period.start" :max="period.end" />
+                </div>
+                <button class="btn-init btn-init--elec" @click="confirmMeterInit(period, pi, 'electricity')">
+                  <i class="fas fa-check"></i> Initialize
+                </button>
               </div>
             </div>
+            <template v-else-if="activeMeter(period) === 'electricity' && period.electricity">
 
-            <template v-if="p.expanded">
-              <div class="anchor-grid">
-                <div class="anchor-cell">
-                  <div class="anchor-cell-label">Consumption</div>
-                  <div class="anchor-cell-val">{{ litresToKlStr(p.consumption) }} kL</div>
-                  <div class="anchor-cell-sub">{{ fmtN(p.consumption) }} L</div>
-                </div>
-                <div class="anchor-cell">
-                  <div class="anchor-cell-label">Daily Avg</div>
-                  <div class="anchor-cell-val">{{ p.daily_usage != null ? fmtN(p.daily_usage, 1) + ' L/day' : '_ _' }}</div>
-                </div>
-                <div class="anchor-cell">
-                  <div class="anchor-cell-label">Closing Provisional</div>
-                  <div class="anchor-cell-val" :class="p.closing_provisional ? 'val-provisional' : 'val-empty'">
-                    {{ p.closing_provisional != null ? litresToKlStr(p.closing_provisional) : '_ _' }}
-                  </div>
-                </div>
-                <div class="anchor-cell">
-                  <div class="anchor-cell-label">Closing Actual</div>
-                  <div class="anchor-cell-val" :class="p.closing_actual ? 'val-calculated' : 'val-empty'">
-                    {{ p.closing_actual != null ? litresToKlStr(p.closing_actual) : '_ _' }}
-                  </div>
-                </div>
+              <!-- Opening -->
+              <div class="period-opening-row period-opening-row--elec">
+                <span class="por-label por-label--elec">{{ pi === 0 && mode === 'test' ? 'Start Reading' : 'Opening Reading' }}</span>
+                <span class="por-val">{{ fmtN(period.electricity.openingKwh) }} kWh</span>
               </div>
-              <div v-if="p.closing_provisional != null && p.closing_actual != null"
-                class="recon-row"
-                :class="p.closing_actual > p.closing_provisional ? 'recon--short' : 'recon--surplus'">
-                Reconciliation: {{ p.closing_actual > p.closing_provisional ? 'Shortfall' : 'Surplus' }}
-                {{ fmtN(Math.abs(p.closing_actual - p.closing_provisional)) }} L carried to next period.
-              </div>
-              <div class="stats-bar stats-bar--sm">
+
+              <!-- Stats bar (electricity) -->
+              <div class="stats-bar stats-bar--elec">
                 <div class="stat-cell">
-                  <div class="stat-label">Bill Total</div>
-                  <div class="stat-val">R {{ fmtMoney(p.total_amount) }}</div>
+                  <div class="stat-label">Daily Usage</div>
+                  <div class="stat-val">{{ period.electricity.dailyUsage != null ? fmtN(period.electricity.dailyUsage, 0) + ' kWh' : '_ _' }}</div>
+                </div>
+                <div class="stat-cell">
+                  <div class="stat-label">Current Usage</div>
+                  <div class="stat-val">{{ period.electricity.stats && period.electricity.stats.currentR > 0 ? 'R ' + fmtMoney(period.electricity.stats.currentR) : '_ _' }}</div>
+                </div>
+                <div class="stat-cell">
+                  <div class="stat-label">Projected Usage</div>
+                  <div class="stat-val">{{ period.electricity.stats ? 'R ' + fmtMoney(period.electricity.stats.projectedR) : '_ _' }}</div>
                 </div>
               </div>
-            </template>
-          </div>
 
-        </template>
-      </template>
+              <!-- Readings (electricity) -->
+              <div class="readings-section">
+                <div class="readings-header">
+                  <span class="readings-header-label">Readings</span>
+                  <span class="readings-header-hint">{{ mode === 'test' ? 'kWh · 6 digits' : 'kWh' }}</span>
+                </div>
+                <template v-if="mode === 'test'">
+                  <div
+                    v-for="(r, ri) in period.electricity.readings"
+                    :key="ri"
+                    class="reading-row"
+                    :class="r.error && 'reading-row--error'"
+                  >
+                    <div class="date-wrap">
+                      <i class="fas fa-calendar-alt date-icon"></i>
+                      <input type="date" v-model="r.date" class="f-input r-date"
+                        :min="period.start" :max="period.end"
+                        @change="recomputePeriodElec(period, pi)" />
+                    </div>
+                    <ElecInput v-model="r.kwh" @change="onElecInput(period, r, pi)" />
+                    <div class="r-litres" v-if="r.kwhInt && !r.error">{{ fmtN(r.kwhInt) }} kWh</div>
+                    <div class="r-seq-error" v-if="r.error">
+                      <i class="fas fa-exclamation-triangle"></i> {{ r.error }}
+                    </div>
+                    <button class="btn-rm" @click="period.electricity.readings.splice(ri, 1); recomputePeriodElec(period, pi)">
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </div>
+                  <div v-if="period.electricity.readings.length === 0" class="empty-readings">
+                    No readings yet — click "+ Add Reading"
+                  </div>
+                </template>
+                <template v-else>
+                  <div v-for="r in period.electricity.readings" :key="r.id" class="reading-row">
+                    <span class="r-date-display">{{ fmt(r.date) }}</span>
+                    <span class="r-kl-display" style="color:#d69e2e;">{{ fmtN(r.value) }} kWh</span>
+                  </div>
+                  <div v-if="period.electricity.readings.length === 0" class="empty-readings">No intra-period readings.</div>
+                </template>
+              </div>
+
+              <!-- Sectors (electricity) -->
+              <div v-if="period.electricity.sectors.length" class="sectors-section">
+                <div class="sectors-label">Sectors</div>
+                <table class="data-table">
+                  <thead>
+                    <tr><th>From</th><th>To</th><th class="num">Block Days</th><th class="num">Usage (kWh)</th><th class="num">kWh/day</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(s, si) in period.electricity.sectors" :key="si">
+                      <td>{{ fmt(s.start) }}</td><td>{{ fmt(s.end) }}</td>
+                      <td class="num">{{ s.block_days }}</td>
+                      <td class="num">{{ fmtN(s.total_usage) }}</td>
+                      <td class="num">{{ fmtN(s.daily_avg, 1) }} kWh/day</td>
+                    </tr>
+                    <tr class="total-row">
+                      <td colspan="2">Total</td>
+                      <td class="num">{{ period.electricity.sectors.reduce((a,s)=>a+s.block_days,0) }}</td>
+                      <td class="num">{{ fmtN(period.electricity.sectors.reduce((a,s)=>a+s.total_usage,0)) }}</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Closing bar (electricity) -->
+              <div class="closing-bar closing-bar--elec" :class="period.electricity.calculatedClosingKwh != null && 'closing-bar--resolved'">
+                <div class="closing-cell">
+                  <div class="closing-cell-label">Closing provisional</div>
+                  <div class="closing-cell-val val-provisional">
+                    {{ period.electricity.provisionalClosingKwh != null ? fmtN(period.electricity.provisionalClosingKwh) : '_ _' }}
+                  </div>
+                  <div class="closing-cell-sub" v-if="period.electricity.provisionalClosingKwh != null">kWh</div>
+                </div>
+                <div class="closing-cell">
+                  <div class="closing-cell-label">Closing calculated</div>
+                  <div class="closing-cell-val" :class="period.electricity.calculatedClosingKwh != null ? 'val-calculated' : 'val-empty'">
+                    {{ period.electricity.calculatedClosingKwh != null ? fmtN(period.electricity.calculatedClosingKwh) : '_ _' }}
+                  </div>
+                  <div class="closing-cell-sub" v-if="period.electricity.calculatedClosingKwh != null">kWh</div>
+                </div>
+                <div class="closing-cell">
+                  <div class="closing-cell-label">Adjustment</div>
+                  <div class="closing-cell-val" :class="elecAdjClass(period)">{{ formatElecAdj(period) }}</div>
+                  <div class="closing-cell-sub" v-if="period.electricity.calculatedClosingKwh != null">
+                    {{ (period.electricity.calculatedClosingKwh - period.electricity.provisionalClosingKwh) >= 0 ? 'shortfall' : 'surplus' }}
+                  </div>
+                </div>
+              </div>
+            </template><!-- /electricity -->
+
+            <!-- Period actions -->
+            <div class="period-actions">
+              <button v-if="mode === 'test' && !!period[activeMeter(period)]" class="btn-add-reading" @click="addReadingToPeriod(period)">
+                <i class="fas fa-plus"></i> Add Reading
+              </button>
+              <button class="btn-calc" @click="calcPeriod(pi)"
+                :disabled="!canCalcPeriod(period) || period.calculating">
+                <i v-if="period.calculating" class="fas fa-circle-notch fa-spin"></i>
+                {{ period.calculating ? 'Calculating…' : 'Calculate' }}
+              </button>
+              <button v-if="period.bill" class="btn-view-bill" @click="period.showBill = !period.showBill">
+                <i class="fas" :class="period.showBill ? 'fa-eye-slash' : 'fa-file-invoice-dollar'"></i>
+                {{ period.showBill ? 'Hide Bill' : 'View Bill' }}
+              </button>
+              <span v-if="!canCalcPeriod(period) && !period.calculating" class="calc-block-hint">
+                <i class="fas fa-info-circle"></i> {{ calcBlockReason(period) }}
+              </span>
+            </div>
+            <div v-if="period.calcError" class="msg-error">{{ period.calcError }}</div>
+
+            <!-- ══ BILL — shown only when View Bill is clicked ══ -->
+            <div v-if="period.bill && period.showBill" class="period-billing">
+              <div class="period-billing-header">
+                <i class="fas fa-file-invoice-dollar"></i>
+                Bill · Period {{ pi + 1 }}: {{ fmt(period.start) }} → {{ fmt(period.end) }}
+              </div>
+
+              <!-- Water section -->
+              <div v-if="period.bill.water" class="bill-meter-section">
+                <div class="bill-meter-hdr bill-meter-hdr--water">
+                  <i class="fas fa-tint"></i> Water
+                  <span class="bill-meter-consumption">
+                    {{ fmtN(period.bill.water.consumption_litres) }} L · {{ fmtKl(period.bill.water.consumption_kl) }} kL
+                  </span>
+                </div>
+                <div class="bill-grid">
+                  <div class="bill-stat"><div class="bill-stat-label">Usage Charge</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.water.usage_charge) }}</div></div>
+                  <div class="bill-stat"><div class="bill-stat-label">VAT</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.water.vat_amount) }}</div></div>
+                  <div class="bill-stat"><div class="bill-stat-label">Water Subtotal</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.water.usage_charge + period.bill.water.vat_amount) }}</div></div>
+                </div>
+                <div v-if="period.bill.water.tier_breakdown?.length" class="tier-section">
+                  <div class="tier-label">Tier Breakdown</div>
+                  <table class="data-table">
+                    <thead><tr><th>Tier</th><th class="num">Units (kL)</th><th class="num">Rate (R/kL)</th><th class="num">Charge</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(t, i) in period.bill.water.tier_breakdown" :key="i">
+                        <td>Tier {{ i + 1 }}</td>
+                        <td class="num">{{ fmtKl(t.units_kl) }}</td>
+                        <td class="num">{{ t.rate }}</td>
+                        <td class="num">R {{ fmtMoney(t.amount) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Electricity section -->
+              <div v-if="period.bill.electricity" class="bill-meter-section">
+                <div class="bill-meter-hdr bill-meter-hdr--elec">
+                  <i class="fas fa-bolt"></i> Electricity
+                  <span class="bill-meter-consumption">{{ fmtN(period.bill.electricity.consumption_litres) }} kWh</span>
+                </div>
+                <div class="bill-grid">
+                  <div class="bill-stat"><div class="bill-stat-label">Usage Charge</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.electricity.usage_charge) }}</div></div>
+                  <div class="bill-stat"><div class="bill-stat-label">VAT</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.electricity.vat_amount) }}</div></div>
+                  <div class="bill-stat"><div class="bill-stat-label">Electricity Subtotal</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.electricity.usage_charge + period.bill.electricity.vat_amount) }}</div></div>
+                </div>
+                <div v-if="period.bill.electricity.tier_breakdown?.length" class="tier-section">
+                  <div class="tier-label">Tier Breakdown</div>
+                  <table class="data-table">
+                    <thead><tr><th>Tier</th><th class="num">Units (kWh)</th><th class="num">Rate (R/kWh)</th><th class="num">Charge</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(t, i) in period.bill.electricity.tier_breakdown" :key="i">
+                        <td>Tier {{ i + 1 }}</td>
+                        <td class="num">{{ fmtN(t.units_kl, 0) }}</td>
+                        <td class="num">{{ t.rate }}</td>
+                        <td class="num">R {{ fmtMoney(t.amount) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Fixed / generic charges -->
+              <div v-if="period.bill.fixed_breakdown?.length" class="bill-meter-section">
+                <div class="bill-meter-hdr bill-meter-hdr--generic">
+                  <i class="fas fa-list-ul"></i> Fixed Charges
+                </div>
+                <div class="bill-grid">
+                  <div v-for="(f, fi) in period.bill.fixed_breakdown" :key="fi" class="bill-stat">
+                    <div class="bill-stat-label">{{ f.name }}</div>
+                    <div class="bill-stat-val">R {{ fmtMoney(f.amount) }}</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Adjustment b/f — detailed breakdown -->
+              <div v-if="period.bill.adjustment_brought_forward" class="bill-meter-section bill-adj-section">
+                <div class="bill-meter-hdr bill-meter-hdr--adj">
+                  <i class="fas fa-exchange-alt"></i> Adjustment b/f
+                  <span :class="['bill-meter-consumption', period.bill.adjustment_brought_forward > 0 ? 'val-shortfall' : 'val-surplus']">
+                    {{ period.bill.adjustment_brought_forward > 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(period.bill.adjustment_brought_forward)) }}
+                  </span>
+                </div>
+
+                <!-- Per-period detail rows -->
+                <template v-if="period.bill.adjustment_detail?.length">
+                  <div v-for="(d, di) in period.bill.adjustment_detail" :key="di" class="adj-detail-row">
+                    <div class="adj-detail-period">
+                      <i class="fas fa-calendar-alt"></i>
+                      Period {{ d.periodNum }} &nbsp;·&nbsp; {{ fmt(d.periodStart) }} → {{ fmt(d.periodEnd) }}
+                    </div>
+                    <div class="adj-detail-grid">
+                      <div class="adj-cell">
+                        <div class="adj-cell-label">Provisioned</div>
+                        <div class="adj-cell-val">{{ fmtN(d.provisionedLitres) }} L</div>
+                        <div class="adj-cell-sub">R {{ fmtMoney(d.provisionalR) }}</div>
+                      </div>
+                      <div class="adj-cell">
+                        <div class="adj-cell-label">Actual</div>
+                        <div class="adj-cell-val">{{ fmtN(d.actualLitres) }} L</div>
+                        <div class="adj-cell-sub">R {{ fmtMoney(d.actualR) }}</div>
+                      </div>
+                      <div class="adj-cell">
+                        <div class="adj-cell-label">Difference</div>
+                        <div :class="['adj-cell-val', d.diffLitres >= 0 ? 'val-shortfall' : 'val-surplus']">
+                          {{ d.diffLitres >= 0 ? '+' : '' }}{{ fmtN(d.diffLitres) }} L
+                        </div>
+                        <div :class="['adj-cell-sub', d.diffR >= 0 ? 'val-shortfall' : 'val-surplus']">
+                          {{ d.diffR >= 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(d.diffR)) }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="adj-reason">
+                      <i class="fas fa-info-circle"></i> {{ d.reason }}
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <!-- Grand total -->
+              <div class="bill-grand-total">
+                <div class="bgt-row" v-if="period.bill.water">
+                  <span>Water</span>
+                  <span>R {{ fmtMoney(period.bill.water.usage_charge + period.bill.water.vat_amount) }}</span>
+                </div>
+                <div class="bgt-row" v-if="period.bill.electricity">
+                  <span>Electricity</span>
+                  <span>R {{ fmtMoney(period.bill.electricity.usage_charge + period.bill.electricity.vat_amount) }}</span>
+                </div>
+                <div class="bgt-row" v-if="period.bill.fixed_total">
+                  <span>Fixed Charges</span>
+                  <span>R {{ fmtMoney(period.bill.fixed_total) }}</span>
+                </div>
+                <div v-if="period.bill.adjustment_brought_forward" class="bgt-row">
+                  <span>Adjustment b/f</span>
+                  <span :class="period.bill.adjustment_brought_forward > 0 ? 'val-shortfall' : 'val-surplus'">
+                    {{ period.bill.adjustment_brought_forward > 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(period.bill.adjustment_brought_forward)) }}
+                  </span>
+                </div>
+                <div class="bgt-total">
+                  <span>TOTAL</span>
+                  <span>R {{ fmtMoney(period.bill.grand_total) }}</span>
+                </div>
+              </div>
+            </div><!-- /bill -->
+
+          </template><!-- /expanded -->
+        </div><!-- /period-block -->
+
+        <!-- Add Period button (test mode only, shown when at least one meter initialized on last period) -->
+        <button
+          v-if="mode === 'test' && test.periods.length > 0 && (test.periods[test.periods.length-1].water !== null || test.periods[test.periods.length-1].electricity !== null)"
+          class="btn-add-period-bottom"
+          :disabled="test.periods[test.periods.length-1]?.calculating"
+          @click="addPeriod"
+        >
+          <i v-if="test.periods[test.periods.length-1]?.calculating" class="fas fa-circle-notch fa-spin"></i>
+          <i v-else class="fas fa-plus"></i>
+          {{ test.periods[test.periods.length-1]?.calculating ? 'Calculating…' : 'Add Period' }}
+        </button>
+
+      </template><!-- /activePeriods -->
 
     </div>
+
+    <!-- ══ ALARM MODAL (ALM-001: No Period Reading) ══ -->
+    <Teleport to="body">
+      <div v-if="alarmModal.show" class="alarm-overlay" @click.self="alarmModal.show = false">
+        <div class="alarm-modal">
+          <div class="alarm-modal-header">
+            <div class="alarm-modal-title">
+              <i class="fas fa-exclamation-triangle"></i>
+              Meter Reading Alert
+            </div>
+            <button class="alarm-modal-close" @click="alarmModal.show = false">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="alarm-modal-body">
+            <div v-for="(item, i) in alarmModal.items" :key="i" class="alarm-modal-item">
+              <div :class="['alarm-modal-icon', item.meter === 'water' ? 'alarm-modal-icon--water' : 'alarm-modal-icon--elec']">
+                <i :class="['fas', item.meter === 'water' ? 'fa-tint' : 'fa-bolt']"></i>
+              </div>
+              <div class="alarm-modal-text">
+                <div class="alarm-modal-msg">{{ item.message }}</div>
+                <div class="alarm-modal-sub">
+                  <i class="fas fa-clock"></i> Last reading was <strong>{{ item.daysSince }} day{{ item.daysSince !== 1 ? 's' : '' }}</strong> ago
+                  &nbsp;·&nbsp; <span class="alarm-ref">{{ item.ref }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="alarm-modal-footer">
+            <button class="alarm-dismiss" @click="alarmModal.show = false">
+              <i class="fas fa-check"></i> Dismiss
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
   </AdminLayout>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
-import MeterInput from '@/components/MeterInput.vue'
+import MeterInput  from '@/components/MeterInput.vue'
+import ElecInput   from '@/components/ElecInput.vue'
+
+// ── Alarm state (ALM-001) ─────────────────────────────────────────────────────
+const alarmModal = ref({ show: false, items: [] })
 
 const props = defineProps({
   users:           { type: Array,  default: () => [] },
@@ -653,18 +718,14 @@ const props = defineProps({
 const mode = ref('test')
 function setMode (m) { mode.value = m }
 
-// ══════════════════════════════════════════════════════════
-// kL ↔ Litres conversions
-// Format: XXXX.XX  (kL · 4 whole digits, 2 fractional)
-// 0001.50 = 1.5 kL = 1500 L
-// ══════════════════════════════════════════════════════════
+// ── kL ↔ Litres ──────────────────────────────────────────────────────────────
 function klStrToLitres (klStr) {
   const v = parseFloat(klStr)
   return isNaN(v) ? 0 : Math.round(v * 1000)
 }
 function litresToKlStr (litres) {
   if (litres === null || litres === undefined) return '_ _'
-  const kl   = litres / 1000
+  const kl    = litres / 1000
   const whole = Math.floor(kl).toString().padStart(4, '0')
   const frac  = Math.round((kl % 1) * 100).toString().padStart(2, '0')
   return `${whole}.${frac}`
@@ -674,22 +735,32 @@ function litresToKlStr (litres) {
 // TEST MODE
 // ══════════════════════════════════════════════════════════
 const test = ref({
-  billDay:           1,
-  startMonth:        props.today ? props.today.slice(0, 7) : new Date().toISOString().slice(0, 7),
-  templateId:        '',
-  startReadingKl:    '0000.00',
-  startReadingLitres: 0,
-  startConfirmed:    false,
-  periodStart:       '',
-  periodEnd:         '',
-  periodDays:        0,
-  periods:           [],
+  billDay:        1,
+  startMonth:     props.today ? props.today.slice(0, 7) : new Date().toISOString().slice(0, 7),
+  templateId:     '',
+  periodStart:    '',
+  periodEnd:      '',
+  periodDays:     0,
+  periods:        [],
+  activeMeterTab: 'water',   // top-level tab: 'water' | 'electricity'
 })
-const latestBill = ref(null)
+
+// Tariff meter flags
+const hasWater = computed(() => {
+  if (!test.value.templateId) return true
+  const t = props.tariffTemplates.find(t => String(t.id) === String(test.value.templateId))
+  return t ? (t.is_water !== false && Number(t.is_water) !== 0) : true
+})
+const hasElec = computed(() => {
+  if (!test.value.templateId) return false
+  const t = props.tariffTemplates.find(t => String(t.id) === String(test.value.templateId))
+  return t ? !!t.is_electricity : false
+})
 
 function localDateStr (d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
+
 function recomputeTestPeriod () {
   const { billDay, startMonth } = test.value
   if (!startMonth || !billDay) return
@@ -698,205 +769,340 @@ function recomputeTestPeriod () {
   let ny = y, nm = m + 1
   if (nm > 12) { nm = 1; ny++ }
   const lastDayNext = new Date(ny, nm, 0).getDate()
-  const effDay = Math.min(billDay, lastDayNext)
+  const effDay      = Math.min(billDay, lastDayNext)
   const d = new Date(ny, nm - 1, effDay)
   d.setDate(d.getDate() - 1)
   test.value.periodEnd  = localDateStr(d)
   test.value.periodDays = blockDays(test.value.periodStart, test.value.periodEnd)
+  // Auto-create first period shell as soon as tariff + dates are set
+  if (test.value.templateId && test.value.periods.length === 0) {
+    test.value.periods = [makeEmptyPeriod(0, test.value.periodStart, test.value.periodEnd, test.value.periodDays)]
+  }
 }
+
 function onTestTemplateChange () {
   const t = props.tariffTemplates.find(t => String(t.id) === String(test.value.templateId))
-  if (t?.billing_day) { test.value.billDay = t.billing_day; recomputeTestPeriod() }
+  if (t?.billing_day) { test.value.billDay = t.billing_day }
+  recomputeTestPeriod()
+  // Reset periods when tariff changes
+  test.value.periods = test.value.periodStart
+    ? [makeEmptyPeriod(0, test.value.periodStart, test.value.periodEnd, test.value.periodDays)]
+    : []
+  test.value.activeMeterTab = 'water'
 }
 
-function confirmStartReading () {
-  test.value.startReadingLitres = klStrToLitres(test.value.startReadingKl)
-  test.value.startConfirmed     = true
-  if (test.value.periods.length === 0 && test.value.periodStart) {
-    test.value.periods.push(makePeriod(0, test.value.startReadingLitres, test.value.periodStart))
-  }
-}
-
-function makePeriod (index, openingLitres, openingDate) {
+// ── Period helpers ────────────────────────────────────────────────────────────
+function makeEmptyPeriod (index, start, end, days) {
   return {
     index,
-    start:                       test.value.periodStart,
-    end:                         test.value.periodEnd,
-    blockDays:                   test.value.periodDays,
-    openingLitres,
-    openingDate,
-    readings:                    [],
-    sectors:                     [],
-    provisionalClosingLitres:    null,
-    calculatedClosingLitres:     null,
-    provisionalClosingSnapshot:  null,  // litres at time straddle resolved (prev provisional)
-    provisionalBillR:            null,  // Period N-1 bill at provisional consumption
-    calculatedBillR:             null,  // Period N-1 bill at actual consumption
-    adjustmentBroughtForward:    0,     // R difference carried into this period's bill
-    inheritedDailyUsage:         null,  // daily usage from previous period (momentum)
-    dailyUsage:                  null,
-    calculating:                 false,
-    calcError:                   '',
-    stats:                       null,
-    bill:                        null,  // result of calculatePeriod()
-    expanded:                    true,
+    start,
+    end,
+    blockDays:   days,
+    expanded:    true,
+    water:       null,
+    electricity: null,
+    showBill:    false,
+    bill:        null,
+    calculating: false,
+    calcError:   '',
+    // Transient init state — cleared after confirmation
+    _wInitReading: '0000.00',
+    _wInitDate:    start,
+    _eInitReading: '000000',
+    _eInitDate:    start,
   }
 }
+
+function makeWaterMeter (litres, date) {
+  return {
+    openingLitres:              litres,
+    openingDate:                date,
+    readings:                   [],
+    sectors:                    [],
+    provisionalClosingLitres:   null,
+    calculatedClosingLitres:    null,
+    provisionalClosingSnapshot: null,
+    provisionalBillR:           null,
+    calculatedBillR:            null,
+    adjustmentBroughtForward:   0,
+    adjustmentDetail:           null,
+    inheritedDailyUsage:        null,
+    dailyUsage:                 null,
+    stats:                      null,
+  }
+}
+
+function makeElecMeter (kwh, date) {
+  return {
+    openingKwh:              kwh,
+    openingDate:             date,
+    readings:                [],
+    sectors:                 [],
+    provisionalClosingKwh:   null,
+    calculatedClosingKwh:    null,
+    dailyUsage:              null,
+    adjustmentBroughtForward: 0,
+    inheritedDailyUsage:     null,
+    stats:                   null,
+  }
+}
+
+// Check whether a meter type has been initialized in period[0..pi]
+function isMeterInitialized (pi, meterType) {
+  return test.value.periods.slice(0, pi + 1).some(p => p[meterType] !== null)
+}
+
+// Confirm initialization of a meter for a specific period
+function confirmMeterInit (period, pi, meterType) {
+  if (meterType === 'water') {
+    const litres = klStrToLitres(period._wInitReading || '0000.00')
+    const date   = period._wInitDate   || period.start
+    period.water = {
+      openingLitres:              litres,
+      openingDate:                date,
+      readings:                   [],
+      sectors:                    [],
+      provisionalClosingLitres:   null,
+      calculatedClosingLitres:    null,
+      provisionalClosingSnapshot: null,
+      provisionalBillR:           null,
+      calculatedBillR:            null,
+      adjustmentBroughtForward:   0,
+      adjustmentDetail:           null,
+      inheritedDailyUsage:        null,
+      dailyUsage:                 null,
+      stats:                      null,
+    }
+    recomputePeriodWater(period, pi)
+  } else {
+    const kwh  = parseInt(period._eInitReading || '0') || 0
+    const date = period._eInitDate || period.start
+    period.electricity = {
+      openingKwh:              kwh,
+      openingDate:             date,
+      readings:                [],
+      sectors:                 [],
+      provisionalClosingKwh:   null,
+      calculatedClosingKwh:    null,
+      dailyUsage:              null,
+      adjustmentBroughtForward: 0,
+      inheritedDailyUsage:     null,
+      stats:                   null,
+    }
+    recomputePeriodElec(period, pi)
+  }
+}
+
 
 function prevPeriod (pi) {
-  return pi > 0 ? test.value.periods[pi - 1] : null
+  return pi > 0 ? activePeriods.value[pi - 1] : null
 }
 
-function addPeriod () {
-  if (test.value.periods.length > 0) {
-    test.value.periods[test.value.periods.length - 1].expanded = false
+// ── Period header click — expand/collapse + alarm check ───────────────────────
+function onPeriodHeaderClick (period, pi) {
+  const wasExpanded = period.expanded
+  period.expanded = !period.expanded
+  if (!wasExpanded && period.expanded) checkPeriodAlarms(period, pi)
+}
+
+// ALM-001: No Period Reading
+// Fires in account mode on the current (last) period when a meter has no
+// readings and the opening date is more than 5 days before today.
+function checkPeriodAlarms (period, pi) {
+  if (mode.value !== 'account') return
+  if (pi !== activePeriods.value.length - 1) return   // only current period
+
+  const today     = props.today ? new Date(props.today + 'T00:00:00') : new Date()
+  const threshold = 5
+  const items     = []
+
+  if (period.water && period.water.readings.length === 0) {
+    const lastDate  = new Date((period.water.openingDate || period.start) + 'T00:00:00')
+    const daysSince = Math.floor((today - lastDate) / 86_400_000)
+    if (daysSince > threshold) {
+      items.push({
+        meter:    'water',
+        message:  'No readings exist for this period — please read your water meter.',
+        daysSince,
+        ref:      'ALM-001',
+      })
+    }
   }
-  const last     = test.value.periods[test.value.periods.length - 1]
+
+  if (period.electricity && period.electricity.readings.length === 0) {
+    const lastDate  = new Date((period.electricity.openingDate || period.start) + 'T00:00:00')
+    const daysSince = Math.floor((today - lastDate) / 86_400_000)
+    if (daysSince > threshold) {
+      items.push({
+        meter:    'electricity',
+        message:  'No readings exist for this period — please read your electricity meter.',
+        daysSince,
+        ref:      'ALM-001',
+      })
+    }
+  }
+
+  if (items.length) alarmModal.value = { show: true, items }
+}
+
+async function addPeriod () {
+  const periods = test.value.periods
+  if (!periods.length) return
+
+  // Auto-calculate the outgoing period before closing it
+  const lastPi = periods.length - 1
+  if (canCalcPeriod(periods[lastPi]) && !periods[lastPi].bill) {
+    await calcPeriod(lastPi)
+    periods[lastPi].showBill = true
+  }
+
+  periods[periods.length - 1].expanded = false
+
+  const last     = periods[periods.length - 1]
   const newStart = nextDay(last.end)
   const [sy, sm] = newStart.split('-').map(Number)
   const tmpMonth = test.value.startMonth
   test.value.startMonth = `${sy}-${String(sm).padStart(2,'0')}`
   recomputeTestPeriod()
-  const openingLitres  = last.calculatedClosingLitres ?? last.provisionalClosingLitres ?? last.openingLitres
-  const newPeriod      = makePeriod(test.value.periods.length, openingLitres, newStart)
-  newPeriod.inheritedDailyUsage = last.dailyUsage   // carry momentum forward
-  test.value.periods.push(newPeriod)
+
+  const newP = makeEmptyPeriod(periods.length, test.value.periodStart, test.value.periodEnd, test.value.periodDays)
+
+  // Carry forward water meter if already initialized
+  if (last.water !== null) {
+    const openingLitres = last.water.calculatedClosingLitres ?? last.water.provisionalClosingLitres ?? last.water.openingLitres
+    newP.water = makeWaterMeter(openingLitres, newStart)
+    newP.water.inheritedDailyUsage = last.water.dailyUsage
+  }
+
+  // Carry forward electricity meter if already initialized
+  if (last.electricity !== null) {
+    const openingKwh = last.electricity.calculatedClosingKwh ?? last.electricity.provisionalClosingKwh ?? last.electricity.openingKwh
+    newP.electricity = makeElecMeter(openingKwh, newStart)
+    newP.electricity.inheritedDailyUsage = last.electricity.dailyUsage
+  }
+
+  periods.push(newP)
   test.value.startMonth = tmpMonth
-  // Apply inherited momentum immediately so the new period shows a projection
-  recomputePeriod(newPeriod, test.value.periods.length - 1)
+  if (newP.water)       recomputePeriodWater(newP, periods.length - 1)
+  if (newP.electricity) recomputePeriodElec(newP, periods.length - 1)
 }
 
 function addReadingToPeriod (period) {
-  const lastDate = period.readings.length > 0
-    ? period.readings[period.readings.length - 1].date
-    : period.openingDate
-  period.readings.push({ date: lastDate, klStr: '', litres: 0, error: '' })
-}
-
-function onReadingInput (period, r, pi) {
-  r.litres = klStrToLitres(r.klStr || '0000.00')
-  recomputePeriod(period, pi)
-}
-
-function recomputePeriod (period, pi) {
-  // If this is period N > 0, trigger straddle reconciliation with period N-1
-  if (pi !== undefined && pi > 0) {
-    reconcileStraddle(pi)  // fire-and-forget async
+  const tab = activeMeter(period)
+  const m   = period[tab]
+  if (!m) return
+  const lastDate = m.readings.length > 0
+    ? m.readings[m.readings.length - 1].date
+    : (m.openingDate || period.start)
+  if (tab === 'water') {
+    m.readings.push({ date: lastDate, klStr: '0000.00', litres: 0, error: '' })
+  } else {
+    m.readings.push({ date: lastDate, kwh: '000000', kwhInt: 0, error: '' })
   }
+}
 
-  // Clear previous sequence errors
-  period.readings.forEach(r => { r.error = '' })
+// ── Water recompute ───────────────────────────────────────────────────────────
+function onWaterInput (period, r, pi) {
+  r.litres = klStrToLitres(r.klStr || '0000.00')
+  recomputePeriodWater(period, pi)
+}
 
-  // Sort valid readings by date, then validate that values never decrease
-  const valid = period.readings
+function recomputePeriodWater (period, pi) {
+  const w = period.water
+  if (!w) return
+  if (pi !== undefined && pi > 0) reconcileStraddleWater(pi)
+
+  w.readings.forEach(r => { r.error = '' })
+  const valid = w.readings
     .filter(r => r.date && r.klStr && r.litres > 0)
     .sort((a, b) => a.date.localeCompare(b.date))
 
   if (valid.length === 0) {
-    period.sectors = []
-    period.provisionalClosingLitres = null
-    period.dailyUsage               = null
-    if (period.inheritedDailyUsage != null && period.inheritedDailyUsage > 0) {
-      period.dailyUsage               = period.inheritedDailyUsage
-      period.provisionalClosingLitres = Math.round(period.openingLitres + period.inheritedDailyUsage * period.blockDays)
+    w.sectors = []; w.provisionalClosingLitres = null; w.dailyUsage = null
+    if (w.inheritedDailyUsage != null && w.inheritedDailyUsage > 0) {
+      w.dailyUsage = w.inheritedDailyUsage
+      w.provisionalClosingLitres = Math.round(w.openingLitres + w.inheritedDailyUsage * period.blockDays)
     }
     return
   }
 
-  // Sequence check: each reading must be ≥ the previous reading (or the opening)
-  let prevLitres = period.openingLitres
+  let prevLitres = w.openingLitres
   for (const r of valid) {
-    if (r.litres < prevLitres) {
-      r.error = `Must be ≥ ${litresToKlStr(prevLitres)} kL`
-    } else {
-      prevLitres = r.litres
-    }
+    if (r.litres < prevLitres) { r.error = `Must be ≥ ${litresToKlStr(prevLitres)} kL` }
+    else { prevLitres = r.litres }
   }
   const sequential = valid.filter(r => !r.error)
-
-  if (sequential.length === 0) {
-    period.sectors = []
-    period.provisionalClosingLitres = null
-    period.dailyUsage               = null
-    if (period.inheritedDailyUsage != null && period.inheritedDailyUsage > 0) {
-      period.dailyUsage               = period.inheritedDailyUsage
-      period.provisionalClosingLitres = Math.round(period.openingLitres + period.inheritedDailyUsage * period.blockDays)
+  if (!sequential.length) {
+    w.sectors = []; w.provisionalClosingLitres = null; w.dailyUsage = null
+    if (w.inheritedDailyUsage) {
+      w.dailyUsage = w.inheritedDailyUsage
+      w.provisionalClosingLitres = Math.round(w.openingLitres + w.inheritedDailyUsage * period.blockDays)
     }
     return
   }
 
   const sectorInput = [
-    { reading_date: period.openingDate, reading_value: period.openingLitres },
+    { reading_date: w.openingDate, reading_value: w.openingLitres },
     ...sequential.map(r => ({ reading_date: r.date, reading_value: r.litres })),
   ]
-  period.sectors   = buildSectors(sectorInput)
+  w.sectors = buildSectors(sectorInput)
   const last       = sequential[sequential.length - 1]
-  const usageSoFar = last.litres - period.openingLitres
-  const days       = blockDays(period.openingDate, last.date)
+  const usageSoFar = last.litres - w.openingLitres
+  const days       = blockDays(w.openingDate, last.date)
   if (days > 0 && usageSoFar >= 0) {
     const rate = usageSoFar / days
-    period.dailyUsage               = Math.round(rate)
-    period.provisionalClosingLitres = Math.round(period.openingLitres + rate * period.blockDays)
+    w.dailyUsage             = Math.round(rate)
+    w.provisionalClosingLitres = Math.round(w.openingLitres + rate * period.blockDays)
     if (last.date === period.end) {
-      period.calculatedClosingLitres  = last.litres
-      period.provisionalClosingLitres = last.litres
+      w.calculatedClosingLitres  = last.litres
+      w.provisionalClosingLitres = last.litres
     }
   }
-  propagateMomentum(pi)
+  propagateMomentumWater(pi)
 }
 
-// Push daily-usage momentum forward into any consecutive empty periods
-function propagateMomentum (fromPi) {
-  if (fromPi === undefined) return
+function propagateMomentumWater (fromPi) {
   for (let k = fromPi + 1; k < test.value.periods.length; k++) {
     const p = test.value.periods[k]
-    if (p.readings.filter(r => r.litres > 0).length > 0) break  // stop at period with real readings
-    p.inheritedDailyUsage   = test.value.periods[k - 1].dailyUsage
-    if (p.inheritedDailyUsage != null && p.inheritedDailyUsage > 0) {
-      p.dailyUsage               = p.inheritedDailyUsage
-      p.provisionalClosingLitres = Math.round(p.openingLitres + p.inheritedDailyUsage * p.blockDays)
+    const pw = p.water
+    if (!pw) break
+    if (pw.readings.filter(r => r.litres > 0).length > 0) break
+    pw.inheritedDailyUsage = test.value.periods[k - 1].water?.dailyUsage ?? null
+    if (pw.inheritedDailyUsage != null && pw.inheritedDailyUsage > 0) {
+      pw.dailyUsage             = pw.inheritedDailyUsage
+      pw.provisionalClosingLitres = Math.round(pw.openingLitres + pw.inheritedDailyUsage * p.blockDays)
     }
   }
 }
 
-// ── Straddle reconciliation (cascade) ─────────────────────────────────────
-// When period pi gets its first reading, we walk backward to find the last
-// period that had actual readings (the "left anchor"). All silent periods
-// in between are resolved proportionally in one pass.
-//
-// Rule: if a period had a provisional (it was projected), show provisional
-// vs actual and carry the R difference forward. If a period was completely
-// silent (no provisional existed), go straight to "calculated" — no ghost
-// provisional is shown, no R adjustment needed for that period.
-async function reconcileStraddle (pi) {
+// ── Straddle reconciliation (water only) ─────────────────────────────────────
+async function reconcileStraddleWater (pi) {
   if (pi === 0) return
-  const currP = test.value.periods[pi]
+  const currP  = test.value.periods[pi]
+  const currW  = currP.water
+  if (!currW) return
 
-  const currReadings = currP.readings
+  const currReadings = currW.readings
     .filter(r => r.date && r.litres > 0)
     .sort((a, b) => a.date.localeCompare(b.date))
   if (!currReadings.length) return
 
-  const rightAnchor = currReadings[0]  // earliest reading in current period
+  const rightAnchor = currReadings[0]
 
-  // ── Walk backward to find the nearest previous period with readings ──
-  // Periods between leftPeriodIdx+1 and pi-1 are silent (guaranteed below).
   let leftPeriodIdx = -1
   let leftAnchor    = null
   for (let k = pi - 1; k >= 0; k--) {
     const p = test.value.periods[k]
-    const pReadings = p.readings
+    const pw = p.water
+    if (!pw) continue
+    const pReadings = pw.readings
       .filter(r => r.date && r.litres > 0)
       .sort((a, b) => a.date.localeCompare(b.date))
     if (pReadings.length > 0) {
-      leftPeriodIdx = k
-      leftAnchor    = pReadings[pReadings.length - 1]  // last reading in that period
-      break
+      leftPeriodIdx = k; leftAnchor = pReadings[pReadings.length - 1]; break
     }
     if (k === 0) {
-      // Period 0 has no readings — fall back to its opening anchor (start reading)
-      leftPeriodIdx = 0
-      leftAnchor    = { date: p.openingDate, litres: p.openingLitres }
+      leftPeriodIdx = 0; leftAnchor = { date: pw.openingDate, litres: pw.openingLitres }
     }
   }
   if (leftAnchor === null) return
@@ -906,213 +1112,527 @@ async function reconcileStraddle (pi) {
   const totalDays  = blockDays(spanFrom, rightAnchor.date)
   if (totalDays <= 0 || totalUsage < 0) return
 
-  // ── Build one slice per period from leftPeriodIdx to pi-1 ──
-  // Each slice covers the portion of the span that falls inside that period.
   const slices = []
   for (let k = leftPeriodIdx; k <= pi - 1; k++) {
-    const p          = test.value.periods[k]
+    const p         = test.value.periods[k]
     const sliceStart = (k === leftPeriodIdx) ? spanFrom : p.start
     const sliceDays  = blockDays(sliceStart, p.end)
     slices.push({ k, p, sliceDays })
   }
 
-  // ── Proportional usage → update calculated closings for each slice ──
   let prevClosing = leftAnchor.litres
   for (const { k, p, sliceDays } of slices) {
-    // Update opening of intermediate silent periods
-    if (k > leftPeriodIdx) {
-      p.openingLitres = prevClosing
-      p.openingDate   = p.start
-    }
-
-    // Only record a provisional snapshot when this period actually had a projection.
-    // Silent periods (provisionalClosingLitres === null) go straight to calculated.
-    p.provisionalClosingSnapshot = p.provisionalClosingLitres  // null if was silent
-
-    p.calculatedClosingLitres = prevClosing + Math.floor(totalUsage * sliceDays / totalDays)
-    prevClosing = p.calculatedClosingLitres
+    const pw = p.water
+    if (!pw) continue
+    if (k > leftPeriodIdx) { pw.openingLitres = prevClosing; pw.openingDate = p.start }
+    pw.provisionalClosingSnapshot = pw.provisionalClosingLitres
+    pw.calculatedClosingLitres    = prevClosing + Math.floor(totalUsage * sliceDays / totalDays)
+    prevClosing = pw.calculatedClosingLitres
   }
 
-  // ── Update current period's actual opening ──
-  currP.openingLitres = prevClosing
-  currP.openingDate   = currP.start
+  currW.openingLitres = prevClosing
+  currW.openingDate   = currP.start
 
-  // ── R adjustment (async): only for periods that had a provisional ──
-  // Silent periods never had a bill issued, so no adjustment is owed.
   if (!test.value.templateId) return
   const tid = parseInt(test.value.templateId)
+  const provisionalSlices = slices.filter(s => s.p.water?.provisionalClosingSnapshot != null)
+  if (!provisionalSlices.length) { currW.adjustmentBroughtForward = 0; return }
 
-  const provisionalSlices = slices.filter(s => s.p.provisionalClosingSnapshot != null)
-  if (provisionalSlices.length === 0) {
-    currP.adjustmentBroughtForward = 0
+  const details = await Promise.all(provisionalSlices.map(async ({ k, p }) => {
+    const pw = p.water
+    const provC = Math.max(0, (pw.provisionalClosingSnapshot ?? 0) - pw.openingLitres)
+    const actC  = Math.max(0, pw.calculatedClosingLitres - pw.openingLitres)
+    const [provRes, actRes] = await Promise.all([
+      apiPost('/admin/calculator/compute-charge', { tariff_template_id: tid, consumption_litres: provC }),
+      apiPost('/admin/calculator/compute-charge', { tariff_template_id: tid, consumption_litres: actC }),
+    ])
+    if (provRes.success && actRes.success) {
+      pw.provisionalBillR = provRes.data.bill_total
+      pw.calculatedBillR  = actRes.data.bill_total
+      return {
+        periodNum:         k + 1,
+        periodStart:       p.start,
+        periodEnd:         p.end,
+        provisionedLitres: provC,
+        actualLitres:      actC,
+        diffLitres:        actC - provC,
+        provisionalR:      provRes.data.bill_total,
+        actualR:           actRes.data.bill_total,
+        diffR:             actRes.data.bill_total - provRes.data.bill_total,
+        reason:            'Meter reading absent or irregular',
+      }
+    }
+    return null
+  }))
+
+  const validDetails = details.filter(Boolean)
+  currW.adjustmentBroughtForward = validDetails.reduce((sum, d) => sum + d.diffR, 0)
+  currW.adjustmentDetail         = validDetails.length ? validDetails : null
+}
+
+// ── Electricity recompute ─────────────────────────────────────────────────────
+function onElecInput (period, r, pi) {
+  r.kwhInt = parseInt(r.kwh) || 0
+  recomputePeriodElec(period, pi)
+}
+
+function recomputePeriodElec (period, pi) {
+  const e = period.electricity
+  if (!e) return
+
+  e.readings.forEach(r => { r.error = '' })
+  const valid = e.readings
+    .filter(r => r.date && r.kwh && r.kwhInt > 0)
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  if (valid.length === 0) {
+    e.sectors = []; e.provisionalClosingKwh = null; e.dailyUsage = null
+    if (e.inheritedDailyUsage != null && e.inheritedDailyUsage > 0) {
+      e.dailyUsage = e.inheritedDailyUsage
+      e.provisionalClosingKwh = Math.round(e.openingKwh + e.inheritedDailyUsage * period.blockDays)
+    }
     return
   }
 
-  const diffs = await Promise.all(provisionalSlices.map(async ({ p }) => {
-    const provConsumption = Math.max(0, p.provisionalClosingSnapshot - p.openingLitres)
-    const actConsumption  = Math.max(0, p.calculatedClosingLitres    - p.openingLitres)
-    const [provRes, actRes] = await Promise.all([
-      apiPost('/admin/calculator/compute-charge', { tariff_template_id: tid, consumption_litres: provConsumption }),
-      apiPost('/admin/calculator/compute-charge', { tariff_template_id: tid, consumption_litres: actConsumption }),
-    ])
-    if (provRes.success && actRes.success) {
-      p.provisionalBillR = provRes.data.bill_total
-      p.calculatedBillR  = actRes.data.bill_total
-      return actRes.data.bill_total - provRes.data.bill_total
+  let prevKwh = e.openingKwh
+  for (const r of valid) {
+    if (r.kwhInt < prevKwh) { r.error = `Must be ≥ ${fmtN(prevKwh)} kWh` }
+    else { prevKwh = r.kwhInt }
+  }
+  const sequential = valid.filter(r => !r.error)
+  if (!sequential.length) {
+    e.sectors = []; e.provisionalClosingKwh = null; e.dailyUsage = null
+    return
+  }
+
+  const sectorInput = [
+    { reading_date: e.openingDate, reading_value: e.openingKwh },
+    ...sequential.map(r => ({ reading_date: r.date, reading_value: r.kwhInt })),
+  ]
+  e.sectors = buildSectors(sectorInput)
+  const last       = sequential[sequential.length - 1]
+  const usageSoFar = last.kwhInt - e.openingKwh
+  const days       = blockDays(e.openingDate, last.date)
+  if (days > 0 && usageSoFar >= 0) {
+    const rate = usageSoFar / days
+    e.dailyUsage           = Math.round(rate)
+    e.provisionalClosingKwh = Math.round(e.openingKwh + rate * period.blockDays)
+    if (last.date === period.end) {
+      e.calculatedClosingKwh  = last.kwhInt
+      e.provisionalClosingKwh = last.kwhInt
     }
-    return 0
-  }))
-
-  currP.adjustmentBroughtForward = diffs.reduce((sum, d) => sum + d, 0)
+  }
 }
 
-function canCalculatePeriod (period) {
-  // Allow calculating if there are readings OR if inherited momentum produced a provisional
-  return test.value.templateId &&
-    (period.readings.some(r => r.date && r.litres > 0) || period.provisionalClosingLitres != null)
-}
-async function calculatePeriod (pi) {
-  const period = test.value.periods[pi]
-  period.calculating = true; period.calcError = ''
-  try {
-    const valid       = period.readings.filter(r => r.date && r.litres > 0)
-    // If no readings, use projected provisional as consumption (momentum-only periods)
-    const consumption = valid.length > 0
-      ? Math.max(0, valid[valid.length - 1].litres - period.openingLitres)
-      : Math.max(0, (period.provisionalClosingLitres ?? 0) - period.openingLitres)
-    const projected   = Math.max(0, (period.provisionalClosingLitres ?? (valid.length > 0 ? valid[valid.length - 1].litres : 0)) - period.openingLitres)
-    const [curRes, proRes] = await Promise.all([
-      apiPost('/admin/calculator/compute-charge', { tariff_template_id: parseInt(test.value.templateId), consumption_litres: consumption }),
-      apiPost('/admin/calculator/compute-charge', { tariff_template_id: parseInt(test.value.templateId), consumption_litres: projected }),
-    ])
-    if (curRes.success && proRes.success) {
-      const adjustmentR = period.adjustmentBroughtForward ?? 0
-      period.stats = {
-        currentR:   curRes.data.bill_total,
-        projectedR: proRes.data.bill_total + adjustmentR,
-        adjustmentR,
-      }
-      period.bill = {
-        ...proRes.data,
-        adjustment_brought_forward: adjustmentR || null,
-        bill_total: proRes.data.bill_total + adjustmentR,
-      }
-    } else {
-      period.calcError = curRes.message || proRes.message || 'Calculation failed'
-    }
-  } catch (e) { period.calcError = e.message }
-  finally     { period.calculating = false }
-}
-
-function formatAdjustment (period) {
-  if (period.calculatedClosingLitres == null || period.provisionalClosingLitres == null) return '_ _'
-  const diff = period.calculatedClosingLitres - period.provisionalClosingLitres
-  return (diff >= 0 ? '+' : '') + fmtN(diff) + ' L'
-}
-function adjustmentClass (period) {
-  if (period.calculatedClosingLitres == null || period.provisionalClosingLitres == null) return 'val-empty'
-  const diff = period.calculatedClosingLitres - period.provisionalClosingLitres
+// ── Adjustment helpers ────────────────────────────────────────────────────────
+function waterAdjClass (period) {
+  const w = period.water
+  if (!w || w.calculatedClosingLitres == null || w.provisionalClosingLitres == null) return 'val-empty'
+  const diff = w.calculatedClosingLitres - w.provisionalClosingLitres
   return diff > 0 ? 'val-shortfall' : diff < 0 ? 'val-surplus' : ''
 }
+function formatWaterAdj (period) {
+  const w = period.water
+  if (!w || w.calculatedClosingLitres == null || w.provisionalClosingLitres == null) return '_ _'
+  const diff = w.calculatedClosingLitres - w.provisionalClosingLitres
+  return (diff >= 0 ? '+' : '') + fmtN(diff) + ' L'
+}
+function elecAdjClass (period) {
+  const e = period.electricity
+  if (!e || e.calculatedClosingKwh == null || e.provisionalClosingKwh == null) return 'val-empty'
+  const diff = e.calculatedClosingKwh - e.provisionalClosingKwh
+  return diff > 0 ? 'val-shortfall' : diff < 0 ? 'val-surplus' : ''
+}
+function formatElecAdj (period) {
+  const e = period.electricity
+  if (!e || e.calculatedClosingKwh == null || e.provisionalClosingKwh == null) return '_ _'
+  const diff = e.calculatedClosingKwh - e.provisionalClosingKwh
+  return (diff >= 0 ? '+' : '') + fmtN(diff) + ' kWh'
+}
 
-// Client-side sector builder
-function buildSectors (readings) {
-  const sorted = [...readings].sort((a, b) => a.reading_date.localeCompare(b.reading_date))
-  const sectors = []
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const r1     = sorted[i]
-    const r2     = sorted[i + 1]
-    const sStart = i === 0 ? r1.reading_date : nextDay(r1.reading_date)
-    const bd     = blockDays(sStart, r2.reading_date)
-    const usage  = Math.max(0, Math.round(Number(r2.reading_value) - Number(r1.reading_value)))
-    sectors.push({ start: sStart, end: r2.reading_date, start_reading: Number(r1.reading_value),
-      end_reading: Number(r2.reading_value), total_usage: usage, block_days: bd,
-      daily_avg: bd > 0 ? Math.round(usage / bd * 10) / 10 : 0 })
+// ── Calculate period bill (test + account unified) ────────────────────────────
+function calcBlockReason (period) {
+  const tariffId = mode.value === 'test'
+    ? test.value.templateId
+    : ua.value.accountData?.tariff?.id
+  if (!tariffId) {
+    return mode.value === 'test'
+      ? 'Select a tariff template in Setup first'
+      : 'This account has no tariff template assigned'
   }
-  return sectors
+  if (!period.water && !period.electricity) return 'No meters on this period'
+  return ''
+}
+
+function canCalcPeriod (period) {
+  return calcBlockReason(period) === ''
+}
+
+async function calcPeriod (pi) {
+  const period   = activePeriods.value[pi]
+  const tariffId = mode.value === 'test'
+    ? parseInt(test.value.templateId)
+    : ua.value.accountData?.tariff?.id
+  const accountId = mode.value === 'account'
+    ? ua.value.accountData?.account?.id
+    : null
+
+  if (!tariffId) { period.calcError = 'No tariff selected.'; return }
+  await computePeriodBill(period, tariffId, accountId)
+}
+
+async function computePeriodBill (period, tariffId, accountId = null) {
+  period.calculating = true; period.calcError = ''; period.bill = null
+  try {
+    const bill = {
+      water:                     null,
+      electricity:               null,
+      fixed_breakdown:           [],
+      fixed_total:               0,
+      adjustment_brought_forward: null,
+      adjustment_detail:         null,
+      grand_total:               0,
+    }
+
+    // ── Water ────────────────────────────────────────────────────────────────
+    if (period.water) {
+      const w     = period.water
+      const openV = w.openingLitres ?? 0
+
+      // Actual consumption to date (last reading - opening)
+      const lastReading = mode.value === 'test'
+        ? w.readings.filter(r => r.litres > 0).sort((a, b) => a.date.localeCompare(b.date)).pop()
+        : w.readings.filter(r => r.value > 0).sort((a, b) => a.date.localeCompare(b.date)).pop()
+      const lastValue       = mode.value === 'test' ? (lastReading?.litres ?? openV) : (lastReading?.value ?? openV)
+      const currConsumption = Math.max(0, Math.round(lastValue - openV))
+
+      // Bill consumption: best available closing (calculated → provisional → last reading)
+      const billClosing     = w.calculatedClosingLitres ?? w.provisionalClosingLitres ?? lastValue
+      const billConsumption = Math.max(0, Math.round(billClosing - openV))
+
+      // Projected: provisional closing extrapolated to full period
+      const projClosing     = w.provisionalClosingLitres ?? billClosing
+      const projConsumption = Math.max(0, Math.round(projClosing - openV))
+      const adj             = w.adjustmentBroughtForward ?? 0
+
+      // Three calls: bill (with fixed), projected, current-to-date (skip if same as bill)
+      const needCurrCall = currConsumption !== billConsumption
+      const apiCalls = [
+        apiPost('/admin/calculator/compute-charge', {
+          tariff_template_id: tariffId,
+          consumption_litres: billConsumption,
+          consumption_unit:   'litres',
+          include_fixed:      true,
+          account_id:         accountId,
+        }),
+        apiPost('/admin/calculator/compute-charge', {
+          tariff_template_id: tariffId,
+          consumption_litres: projConsumption,
+          consumption_unit:   'litres',
+          include_fixed:      false,
+        }),
+        needCurrCall
+          ? apiPost('/admin/calculator/compute-charge', {
+              tariff_template_id: tariffId,
+              consumption_litres: currConsumption,
+              consumption_unit:   'litres',
+              include_fixed:      false,
+            })
+          : Promise.resolve(null),
+      ]
+      const [billRes, projRes, currRes] = await Promise.all(apiCalls)
+
+      if (billRes.success) {
+        bill.water           = billRes.data
+        bill.fixed_breakdown = billRes.data.fixed_breakdown || []
+        bill.fixed_total     = billRes.data.fixed_total || 0
+        const currData = (needCurrCall && currRes?.success) ? currRes.data : billRes.data
+        w.stats = {
+          currentR:   currData.usage_charge + currData.vat_amount,
+          projectedR: (projRes.success ? projRes.data.bill_total : billRes.data.bill_total) + adj,
+        }
+      } else {
+        period.calcError = `Water API error: ${billRes.message || 'unknown'}`
+      }
+      bill.adjustment_brought_forward = adj || null
+      bill.adjustment_detail          = w.adjustmentDetail ?? null
+    }
+
+    // ── Electricity ──────────────────────────────────────────────────────────
+    if (period.electricity) {
+      const e     = period.electricity
+      const openV = e.openingKwh ?? 0
+
+      const lastReadingE = mode.value === 'test'
+        ? e.readings.filter(r => r.kwhInt > 0).sort((a, b) => a.date.localeCompare(b.date)).pop()
+        : e.readings.filter(r => r.value > 0).sort((a, b) => a.date.localeCompare(b.date)).pop()
+      const lastValueE    = mode.value === 'test' ? (lastReadingE?.kwhInt ?? openV) : (lastReadingE?.value ?? openV)
+      const currConsE     = Math.max(0, Math.round(lastValueE - openV))
+
+      const billClosingE  = e.calculatedClosingKwh ?? e.provisionalClosingKwh ?? lastValueE
+      const consumption   = Math.max(0, Math.round(billClosingE - openV))
+      const projClosingE  = e.provisionalClosingKwh ?? billClosingE
+      const projCons      = Math.max(0, Math.round(projClosingE - openV))
+
+      const needCurrCallE = currConsE !== consumption
+      const apiCallsE = [
+        apiPost('/admin/calculator/compute-charge', {
+          tariff_template_id: tariffId,
+          consumption_litres: consumption,
+          consumption_unit:   'kwh',
+          include_fixed:      false,
+        }),
+        apiPost('/admin/calculator/compute-charge', {
+          tariff_template_id: tariffId,
+          consumption_litres: projCons,
+          consumption_unit:   'kwh',
+          include_fixed:      false,
+        }),
+        needCurrCallE
+          ? apiPost('/admin/calculator/compute-charge', {
+              tariff_template_id: tariffId,
+              consumption_litres: currConsE,
+              consumption_unit:   'kwh',
+              include_fixed:      false,
+            })
+          : Promise.resolve(null),
+      ]
+      const [billResE, projResE, currResE] = await Promise.all(apiCallsE)
+
+      if (billResE.success) {
+        bill.electricity = billResE.data
+        const currDataE = (needCurrCallE && currResE?.success) ? currResE.data : billResE.data
+        e.stats = {
+          currentR:   currDataE.usage_charge + currDataE.vat_amount,
+          projectedR: projResE.success ? projResE.data.usage_charge + projResE.data.vat_amount : billResE.data.usage_charge + billResE.data.vat_amount,
+        }
+      }
+    }
+
+    // Grand total
+    const waterTotal  = bill.water        ? (bill.water.usage_charge + bill.water.vat_amount) : 0
+    const elecTotal   = bill.electricity  ? (bill.electricity.usage_charge + bill.electricity.vat_amount) : 0
+    const fixedTotal  = bill.fixed_total  || 0
+    const adj         = bill.adjustment_brought_forward || 0
+    bill.grand_total  = round2(waterTotal + elecTotal + fixedTotal + adj)
+
+    period.bill = bill
+  } catch (e) { period.calcError = e.message }
+  finally     { period.calculating = false }
 }
 
 // ══════════════════════════════════════════════════════════
 // USER + ACCOUNT MODE
 // ══════════════════════════════════════════════════════════
 const ua = ref({
-  userId: '', accountId: '', meterId: '', meterData: null,
-  currentExpanded: true,
-  newReadingDate: props.today || '', newReadingKl: '', newReadingLitres: 0, readingError: '',
+  userId:         '',
+  accountId:      '',
+  loading:        false,
+  accountData:    null,
+  periods:        [],
+  activeMeterTab: 'water',   // top-level tab: 'water' | 'electricity'
 })
+
 const filteredAccounts = computed(() =>
   props.users.find(u => String(u.id) === String(ua.value.userId))?.accounts || []
 )
-const filteredMeters = computed(() =>
-  filteredAccounts.value.find(a => String(a.id) === String(ua.value.accountId))?.meters || []
-)
-function onUserChange    () { ua.value.accountId = ''; ua.value.meterId = ''; ua.value.meterData = null }
-function onAccountChange () { ua.value.meterId   = '';                         ua.value.meterData = null }
-async function loadMeter () {
-  if (!ua.value.meterId) return
-  const res = await apiFetch(`/admin/calculator/meter/${ua.value.meterId}`)
-  if (res.success) {
-    const data = res.data
-    if (data.previous_periods) {
-      data.previous_periods = data.previous_periods.map(p => ({ ...p, expanded: false }))
-    }
-    ua.value.meterData    = data
-    ua.value.currentExpanded = true
-  }
-}
-async function addReading () {
-  ua.value.readingError = ''
-  const litres = klStrToLitres(ua.value.newReadingKl)
-  const res    = await apiPost('/admin/calculator/reading', {
-    meter_id: ua.value.meterId, reading_date: ua.value.newReadingDate, reading_value: litres,
-  })
-  if (!res.success) { ua.value.readingError = res.message || 'Failed to save'; return }
-  ua.value.newReadingKl = ''; ua.value.newReadingLitres = 0
-  await loadMeter()
-}
-async function deleteReading (id) {
-  await apiDelete(`/admin/calculator/reading/${id}`)
-  await loadMeter()
-}
-function graphBarH (dailyAvg) {
-  const max = Math.max(...(ua.value.meterData?.sectors || []).map(s => s.daily_avg), 1)
-  return Math.max(4, Math.round((dailyAvg / max) * 100))
+
+function onUserChange () {
+  ua.value.accountId = ''; ua.value.accountData = null; ua.value.periods = []
 }
 
-// ── Date helpers ──────────────────────────────────────────
+async function loadAccount () {
+  if (!ua.value.accountId) return
+  ua.value.loading = true; ua.value.accountData = null; ua.value.periods = []; ua.value.activeMeterTab = 'water'
+  try {
+    const res = await apiFetch(`/admin/calculator/account/${ua.value.accountId}`)
+    if (res.success) {
+      ua.value.accountData = res.data
+      ua.value.periods     = reconstructPeriods(res.data)
+    }
+  } catch { /* ignore */ }
+  finally { ua.value.loading = false }
+}
+
+function uaPeriodStart (dateStr, billDay) {
+  const d      = new Date(dateStr + 'T00:00:00')
+  const yr     = d.getFullYear(); const mo = d.getMonth()
+  const dInMo  = new Date(yr, mo + 1, 0).getDate()
+  const cand   = new Date(yr, mo, Math.min(billDay, dInMo))
+  if (cand <= d) return localDateStr(cand)
+  const pMo = mo === 0 ? 11 : mo - 1; const pYr = mo === 0 ? yr - 1 : yr
+  return localDateStr(new Date(pYr, pMo, Math.min(billDay, new Date(pYr, pMo + 1, 0).getDate())))
+}
+function uaPeriodEnd (startStr, billDay) {
+  const s  = new Date(startStr + 'T00:00:00')
+  const nMo = (s.getMonth() + 1) % 12
+  const nYr = s.getMonth() === 11 ? s.getFullYear() + 1 : s.getFullYear()
+  const nxS = new Date(nYr, nMo, Math.min(billDay, new Date(nYr, nMo + 1, 0).getDate()))
+  nxS.setDate(nxS.getDate() - 1)
+  return localDateStr(nxS)
+}
+
+function reconstructPeriods (data) {
+  const { account, meters } = data
+  const billDay = account.bill_day || 1
+  const today   = props.today || localDateStr(new Date())
+
+  let earliest = null
+  for (const m of meters) {
+    if (m.readings.length > 0) {
+      if (!earliest || m.readings[0].date < earliest) earliest = m.readings[0].date
+    }
+  }
+  if (!earliest) return []
+
+  const firstStart = uaPeriodStart(earliest, billDay)
+  const periods    = []
+  let   curStart   = firstStart
+
+  while (curStart <= today) {
+    const end       = uaPeriodEnd(curStart, billDay)
+    const nextStart = nextDay(end)
+
+    const period = {
+      start: curStart, end, blockDays: blockDays(curStart, end),
+      expanded: false,
+      water: null, electricity: null,
+      showBill: false,
+      calculating: false, calcError: '', bill: null,
+    }
+
+    for (const m of meters) {
+      const onOrBefore     = m.readings.filter(r => r.date <= curStart)
+      const openingReading = onOrBefore.length ? onOrBefore[onOrBefore.length - 1] : null
+      if (!openingReading) continue
+
+      const periodReadings = m.readings.filter(r => r.date > openingReading.date && r.date <= end && r.date >= curStart)
+      const nextReadings   = m.readings.filter(r => r.date >= nextStart)
+      const nextOpening    = nextReadings.length ? nextReadings[0] : null
+
+      let sectors = []; let provisionalClosing = null; let calculatedClosing = null; let dailyUsage = null
+
+      if (periodReadings.length > 0) {
+        const sectorInput = [
+          { reading_date: openingReading.date, reading_value: openingReading.value },
+          ...periodReadings.map(r => ({ reading_date: r.date, reading_value: r.value })),
+        ]
+        sectors = buildSectors(sectorInput)
+        const last     = periodReadings[periodReadings.length - 1]
+        const usage    = last.value - openingReading.value
+        const daysSpan = blockDays(openingReading.date, last.date)
+        if (daysSpan > 0 && usage >= 0) {
+          dailyUsage = Math.round(usage / daysSpan)
+          provisionalClosing = Math.round(openingReading.value + dailyUsage * period.blockDays)
+          if (last.date === end) { calculatedClosing = last.value; provisionalClosing = last.value }
+        }
+      }
+
+      if (nextOpening && nextOpening.date === nextStart && end < today) {
+        calculatedClosing = nextOpening.value
+        const totalUsage  = nextOpening.value - openingReading.value
+        dailyUsage        = Math.round(totalUsage / period.blockDays)
+        if (!provisionalClosing) provisionalClosing = calculatedClosing
+        if (periodReadings.length === 0) {
+          sectors = [{ start: nextDay(openingReading.date), end, total_usage: totalUsage, block_days: period.blockDays, daily_avg: dailyUsage }]
+        }
+      }
+
+      if (m.meter_type === 'water') {
+        period.water = {
+          openingLitres:            openingReading.value,
+          openingDate:              openingReading.date,
+          readings:                 periodReadings,
+          sectors,
+          provisionalClosingLitres: provisionalClosing,
+          calculatedClosingLitres:  calculatedClosing,
+          provisionalClosingSnapshot: null,
+          provisionalBillR:         null,
+          calculatedBillR:          null,
+          adjustmentBroughtForward: 0,
+          inheritedDailyUsage:      null,
+          dailyUsage,
+          stats:                    null,
+        }
+      } else if (m.meter_type === 'electricity') {
+        period.electricity = {
+          openingKwh:            openingReading.value,
+          openingDate:           openingReading.date,
+          readings:              periodReadings,
+          sectors,
+          provisionalClosingKwh: provisionalClosing,
+          calculatedClosingKwh:  calculatedClosing,
+          dailyUsage,
+          adjustmentBroughtForward: 0,
+          stats:                 null,
+        }
+      }
+    }
+
+    if (period.water || period.electricity) periods.push(period)
+    curStart = nextStart
+  }
+
+  if (periods.length) periods[periods.length - 1].expanded = true
+  return periods
+}
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+const activePeriods = computed(() =>
+  mode.value === 'test' ? test.value.periods : ua.value.periods
+)
+
+function activeMeter (_period) {
+  if (mode.value === 'test') return test.value.activeMeterTab || 'water'
+  return ua.value.activeMeterTab || 'water'
+}
+
+function buildSectors (readings) {
+  const sorted = [...readings].sort((a, b) => a.reading_date.localeCompare(b.reading_date))
+  const sectors = []
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const r1     = sorted[i]; const r2 = sorted[i + 1]
+    const sStart = i === 0 ? r1.reading_date : nextDay(r1.reading_date)
+    const bd     = blockDays(sStart, r2.reading_date)
+    const usage  = Math.max(0, Math.round(Number(r2.reading_value) - Number(r1.reading_value)))
+    sectors.push({
+      start: sStart, end: r2.reading_date,
+      start_reading: Number(r1.reading_value), end_reading: Number(r2.reading_value),
+      total_usage: usage, block_days: bd, daily_avg: bd > 0 ? Math.round(usage / bd * 10) / 10 : 0,
+    })
+  }
+  return sectors
+}
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
 function blockDays (start, end) {
   return Math.round((new Date(end+'T00:00:00') - new Date(start+'T00:00:00')) / 86400000) + 1
 }
 function nextDay (date) {
-  const d = new Date(date+'T00:00:00'); d.setDate(d.getDate()+1)
-  return localDateStr(d)
+  const d = new Date(date+'T00:00:00'); d.setDate(d.getDate()+1); return localDateStr(d)
 }
 function fmt (d) {
   if (!d) return '—'
   return new Date(d+'T00:00:00').toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })
 }
-function fmtShort (d) {
-  if (!d) return ''
-  return new Date(d+'T00:00:00').toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
-}
 function fmtN (n, dp = 0) {
   const v = parseFloat(n ?? 0)
   return isNaN(v) ? '0' : v.toLocaleString('en-ZA', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+}
+function fmtKl (val, dp = 3) {
+  return parseFloat(val ?? 0).toFixed(dp)
 }
 function fmtMoney (n) {
   const v = parseFloat(String(n ?? '0').replace(/,/g, ''))
   return isNaN(v) ? '0.00' : v.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+function round2 (n) { return Math.round((n + Number.EPSILON) * 100) / 100 }
 
-// ── HTTP ──────────────────────────────────────────────────
+// ── HTTP ──────────────────────────────────────────────────────────────────────
 async function apiFetch (url) { return (await window.axios.get(url)).data }
 async function apiPost  (url, data) {
   try { return (await window.axios.post(url, data)).data }
   catch (e) { return e.response?.data || { success: false, message: e.message } }
-}
-async function apiDelete (url) {
-  try { return (await window.axios.delete(url)).data }
-  catch (e) { return { success: false } }
 }
 
 // Init
@@ -1122,485 +1642,316 @@ recomputeTestPeriod()
 <style scoped>
 /* ── Base ──────────────────────────────────────────────────────────────────── */
 .cp {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 1.5rem 1.5rem 5rem;
-  font-family: 'Nunito', sans-serif;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  color: #1a2b3c;
+  max-width: 960px; margin: 0 auto; padding: 1.5rem 1.5rem 5rem;
+  font-family: 'Nunito', sans-serif; display: flex; flex-direction: column; gap: 1.25rem; color: #1a2b3c;
 }
 
 /* ── Header ─────────────────────────────────────────────────────────────────── */
-.cp-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 2px solid #B0D3DF;
-}
-.cp-title { font-size: 1.5rem; font-weight: 800; color: #1a2b3c; }
-.cp-sub   { font-size: 0.72rem; color: #a0aec0; margin-top: 1px; letter-spacing: 0.04em; }
-.cp-tabs  { display: flex; gap: 0; border: 2px solid #B0D3DF; border-radius: 8px; overflow: hidden; }
-.cp-tab   {
-  padding: 0.45rem 1.4rem;
-  background: #fff;
-  border: none;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #718096;
-  cursor: pointer;
-  transition: all 0.15s;
-}
+.cp-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; padding-bottom: 0.75rem; border-bottom: 2px solid #B0D3DF; }
+.cp-title  { font-size: 1.5rem; font-weight: 800; color: #1a2b3c; }
+.cp-sub    { font-size: 0.72rem; color: #a0aec0; margin-top: 1px; letter-spacing: 0.04em; }
+.cp-tabs   { display: flex; gap: 0; border: 2px solid #B0D3DF; border-radius: 8px; overflow: hidden; }
+.cp-tab    { padding: 0.45rem 1.4rem; background: #fff; border: none; font-size: 0.85rem; font-weight: 700; color: #718096; cursor: pointer; transition: all 0.15s; }
 .cp-tab + .cp-tab { border-left: 2px solid #B0D3DF; }
 .cp-tab--on { background: #2d3748; color: #fff; }
 
 /* ── Cards ──────────────────────────────────────────────────────────────────── */
-.card {
-  background: #fff;
-  border-radius: 10px;
-  padding: 1.25rem 1.5rem;
-  box-shadow: 0 2px 8px rgba(50, 148, 184, 0.10), 0 1px 3px rgba(0,0,0,0.05);
-  border: 1px solid #e8f4f8;
-}
-.section-label {
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: #3294B8;
-  margin-bottom: 1rem;
-}
+.card { background: #fff; border-radius: 10px; padding: 1.25rem 1.5rem; box-shadow: 0 2px 8px rgba(50,148,184,.10), 0 1px 3px rgba(0,0,0,.05); border: 1px solid #e8f4f8; }
+.section-label { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #3294B8; margin-bottom: 1rem; }
 
 /* ── Form fields ────────────────────────────────────────────────────────────── */
 .fields-row { display: flex; gap: 1rem; flex-wrap: wrap; }
 .field      { display: flex; flex-direction: column; min-width: 130px; flex: 1; }
 .field--grow { flex: 2; }
 .f-label    { font-size: 0.72rem; font-weight: 700; color: #718096; margin-bottom: 0.3rem; }
-.f-input {
-  padding: 0.5rem 0.75rem;
-  border: 1.5px solid #B0D3DF;
-  border-radius: 7px;
-  font-size: 0.88rem;
-  font-family: 'Nunito', sans-serif;
-  color: #1a2b3c;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(50, 148, 184, 0.08);
-  transition: border-color 0.15s, box-shadow 0.15s;
-  width: 100%;
-  box-sizing: border-box;
-}
-.f-input:focus   { border-color: #3294B8; box-shadow: 0 0 0 3px rgba(50,148,184,0.12); outline: none; }
+.f-input    { padding: 0.5rem 0.75rem; border: 1.5px solid #B0D3DF; border-radius: 7px; font-size: 0.88rem; font-family: 'Nunito', sans-serif; color: #1a2b3c; background: #fff; box-shadow: 0 1px 3px rgba(50,148,184,.08); transition: border-color 0.15s, box-shadow 0.15s; width: 100%; box-sizing: border-box; }
+.f-input:focus   { border-color: #3294B8; box-shadow: 0 0 0 3px rgba(50,148,184,.12); outline: none; }
 .f-input:disabled { background: #f7fafb; cursor: not-allowed; color: #a0aec0; }
-
-/* ── Date input with calendar icon ─────────────────────────────────────────── */
-.date-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.date-icon {
-  position: absolute;
-  left: 0.65rem;
-  color: #3294B8;
-  font-size: 0.78rem;
-  pointer-events: none;
-  z-index: 1;
-}
-.date-wrap .f-input {
-  padding-left: 2rem;
-}
 
 /* ── Period chips ───────────────────────────────────────────────────────────── */
 .period-chip-row { margin-top: 0.85rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.chip-period {
-  display: inline-block; padding: 0.25rem 0.75rem;
-  background: #ebf7fc; color: #2b7fa3; border: 1px solid #B0D3DF;
-  border-radius: 20px; font-size: 0.78rem; font-weight: 700;
-}
-.chip-days {
-  display: inline-block; padding: 0.2rem 0.55rem;
-  background: #f7fafb; color: #718096; border: 1px solid #e2e8f0;
-  border-radius: 20px; font-size: 0.74rem; font-weight: 600;
-  margin-left: 0.3rem;
-}
-.chip-open {
-  display: inline-block; padding: 0.15rem 0.55rem;
-  background: #f0fff4; color: #276749; border: 1px solid #9ae6b4;
-  border-radius: 4px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-left: 0.4rem;
-}
+.chip-period { display: inline-block; padding: 0.25rem 0.75rem; background: #ebf7fc; color: #2b7fa3; border: 1px solid #B0D3DF; border-radius: 20px; font-size: 0.78rem; font-weight: 700; }
+.chip-days   { display: inline-block; padding: 0.2rem 0.55rem; background: #f7fafb; color: #718096; border: 1px solid #e2e8f0; border-radius: 20px; font-size: 0.74rem; font-weight: 600; }
+.chip-open   { display: inline-block; padding: 0.15rem 0.55rem; background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; border-radius: 4px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-left: 0.4rem; }
+.chip-meter  { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.65rem; border-radius: 20px; font-size: 0.74rem; font-weight: 700; }
+.chip-meter--water { background: #ebf7fc; color: #2b7fa3; border: 1px solid #B0D3DF; }
+.chip-meter--elec  { background: #fffbeb; color: #b7791f; border: 1px solid #fef08a; }
 
-/* ── Start Reading row ──────────────────────────────────────────────────────── */
-.start-reading-row { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
-.start-reading-actions { display: flex; flex-direction: column; gap: 0.5rem; justify-content: center; }
-.confirm-hint { font-size: 0.78rem; color: #718096; max-width: 220px; line-height: 1.4; }
-.btn-confirm {
-  padding: 0.5rem 1.5rem; background: #3294B8; color: #fff; border: none; border-radius: 7px;
-  font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: background 0.15s; align-self: flex-start;
+/* ── Meter initialization form (inside period block) ────────────────────────── */
+.meter-init-form        { padding: 1.1rem 1.25rem; border-top: 1px solid #e8f4f8; }
+.meter-init-form--water { background: #f0f8fb; }
+.meter-init-form--elec  { background: #fffbeb; border-top-color: #fef3c7; }
+.init-form-title {
+  font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em;
+  margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.4rem;
 }
-.btn-confirm:hover { background: #2a7a9e; }
-.confirmed-tag {
-  font-size: 0.88rem; font-weight: 700; color: #2f855a; background: #f0fff4;
-  border: 1.5px solid #9ae6b4; border-radius: 7px; padding: 0.5rem 1rem;
+.meter-init-form--water .init-form-title { color: #3294B8; }
+.meter-init-form--elec  .init-form-title { color: #b7791f; }
+.init-form-row { display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap; }
+.btn-init {
+  padding: 0.5rem 1.25rem; border: none; border-radius: 7px;
+  font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: all 0.15s;
+  display: flex; align-items: center; gap: 0.4rem;
+}
+.btn-init--water { background: #3294B8; color: #fff; }
+.btn-init--water:hover { background: #2a7a9e; }
+.btn-init--elec  { background: #b7791f; color: #fff; }
+.btn-init--elec:hover  { background: #975a16; }
+
+/* ── View Bill button ───────────────────────────────────────────────────────── */
+.btn-view-bill {
+  padding: 0.45rem 1.5rem; background: #1a2b3c; color: #B0D3DF; border: 2px solid #2d3748;
+  border-radius: 7px; font-size: 0.88rem; font-weight: 700; cursor: pointer;
+  transition: all 0.15s; display: flex; align-items: center; gap: 0.45rem;
+}
+.btn-view-bill:hover:not(:disabled) { background: #2d3748; color: #fff; border-color: #3294B8; }
+.btn-view-bill:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Account mode meta ──────────────────────────────────────────────────────── */
+.ua-loading { margin-top: 0.75rem; font-size: 0.84rem; color: #3294B8; display: flex; align-items: center; gap: 0.5rem; }
+.ua-meta    { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid #e8f4f8; }
+.ua-meta-item { display: flex; flex-direction: column; gap: 0.15rem; }
+.ua-meta-label { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #3294B8; }
+.ua-meta-val   { font-size: 0.88rem; font-weight: 700; color: #1a2b3c; }
+
+/* ── Meter tabs ─────────────────────────────────────────────────────────────── */
+.meter-tabs {
+  display: flex; border-bottom: 2px solid #e8f4f8; margin: 0;
+}
+.meter-tab {
+  padding: 0.55rem 1.5rem; background: none; border: none; font-size: 0.84rem; font-weight: 700;
+  color: #718096; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px;
+  display: flex; align-items: center; gap: 0.4rem; transition: color .15s, border-color .15s;
+}
+.meter-tab:hover { color: #3294B8; }
+.meter-tab--on   { color: #3294B8; border-bottom-color: #3294B8; }
+.meter-tab--elec:hover { color: #b7791f; }
+.meter-tab-elec--on    { color: #b7791f !important; border-bottom-color: #d69e2e !important; }
+
+/* ── Top-level meter tabs (Water / Electricity) ─────────────────────────────── */
+.top-meter-tabs {
+  display: flex; gap: 0.5rem;
+  background: #fff; border-radius: 10px;
+  padding: 0.5rem 1rem;
+  box-shadow: 0 2px 8px rgba(50,148,184,.10), 0 1px 3px rgba(0,0,0,.05);
+  border: 1px solid #e8f4f8;
+}
+.top-meter-tab {
+  flex: 1; padding: 0.65rem 1rem; border: 2px solid #e8f4f8; border-radius: 8px;
+  background: #f7fbfd; font-size: 0.9rem; font-weight: 700; color: #718096;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  transition: all .15s;
+}
+.top-meter-tab:hover { background: #e8f4f8; }
+.top-meter-tab--water.top-meter-tab--on {
+  background: #e8f4f8; color: #3294B8; border-color: #3294B8;
+}
+.top-meter-tab--elec.top-meter-tab-elec--on {
+  background: #fefcbf; color: #b7791f; border-color: #d69e2e;
 }
 
 /* ── Period blocks ──────────────────────────────────────────────────────────── */
-.period-block {
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(50, 148, 184, 0.10), 0 1px 3px rgba(0,0,0,0.05);
-  border: 1px solid #e8f4f8;
-  border-left: 4px solid #3294B8;
-  display: flex; flex-direction: column;
-  overflow: hidden;
-}
+.period-block { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(50,148,184,.10), 0 1px 3px rgba(0,0,0,.05); border: 1px solid #e8f4f8; border-left: 4px solid #3294B8; display: flex; flex-direction: column; overflow: hidden; }
 .period-block--closed   { border-left-color: #B0D3DF; }
 .period-block--expanded { gap: 0; }
 
 /* ── Period header ──────────────────────────────────────────────────────────── */
-.period-hdr {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.9rem 1.25rem;
-  cursor: pointer;
-  user-select: none;
-  transition: background 0.12s;
-  background: #fff;
-}
+.period-hdr { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; padding: 0.9rem 1.25rem; cursor: pointer; user-select: none; transition: background 0.12s; background: #fff; }
 .period-hdr:hover { background: #f7fbfd; }
 .period-block--collapsed .period-hdr { padding-bottom: 0.85rem; }
-.period-hdr-left  { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; }
-.period-hdr-right { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; padding-top: 0.1rem; }
-.period-hdr-title {
-  font-size: 0.95rem; font-weight: 800; color: #1a2b3c;
-  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
-}
-.period-hdr-dates {
-  font-size: 0.8rem; font-weight: 600; color: #718096;
-  display: inline-flex; align-items: center; gap: 0.25rem; flex-wrap: wrap;
-}
-
-/* ── Collapsed summary line ─────────────────────────────────────────────────── */
-.period-collapsed-summary {
-  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
-  font-size: 0.78rem; color: #718096;
-}
+.period-hdr-left   { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; }
+.period-hdr-right  { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; padding-top: 0.1rem; }
+.period-hdr-title  { font-size: 0.95rem; font-weight: 800; color: #1a2b3c; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.period-hdr-dates  { font-size: 0.8rem; font-weight: 600; color: #718096; display: inline-flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
+.period-collapsed-summary { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; font-size: 0.78rem; color: #718096; }
 .cs-sep   { color: #B0D3DF; font-weight: 700; }
 .cs-label { color: #a0aec0; }
 .cs-val   { font-weight: 700; color: #2d3748; font-family: 'Courier New', monospace; }
 .cs-val--bill { color: #276749; font-family: 'Nunito', sans-serif; }
 .cs-item  { display: inline-flex; align-items: center; gap: 0.25rem; }
-
-/* ── Chevron ────────────────────────────────────────────────────────────────── */
-.period-chevron {
-  color: #B0D3DF; font-size: 0.8rem; transition: color 0.15s;
-}
+.period-chevron { color: #B0D3DF; font-size: 0.8rem; transition: color 0.15s; }
 .period-hdr:hover .period-chevron { color: #3294B8; }
 
-/* ── Opening label row ──────────────────────────────────────────────────────── */
-.period-opening-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.45rem 1.25rem;
-  background: #f0f8fb;
-  border-top: 1px solid #e8f4f8;
-  border-bottom: 1px solid #e8f4f8;
-  flex-wrap: wrap;
-}
-.por-label {
-  font-size: 0.7rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: #3294B8;
-}
-.por-val {
-  font-family: 'Courier New', monospace;
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #1a2b3c;
-}
-.por-was {
-  font-size: 0.72rem;
-  color: #a0aec0;
-  font-style: italic;
-  margin-left: 0.3rem;
-}
+/* ── Opening row ────────────────────────────────────────────────────────────── */
+.period-opening-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 1.25rem; background: #f0f8fb; border-top: 1px solid #e8f4f8; border-bottom: 1px solid #e8f4f8; flex-wrap: wrap; }
+.period-opening-row--elec { background: #fffbeb; border-top-color: #fef3c7; border-bottom-color: #fef3c7; }
+.por-label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: #3294B8; }
+.por-label--elec { color: #b7791f; }
+.por-val   { font-family: 'Courier New', monospace; font-size: 0.88rem; font-weight: 700; color: #1a2b3c; }
+.por-was   { font-size: 0.72rem; color: #a0aec0; font-style: italic; margin-left: 0.3rem; }
 
 /* ── Stats bar ──────────────────────────────────────────────────────────────── */
-.stats-bar {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  background: #B0D3DF;
-}
-.stats-bar--sm { grid-template-columns: 1fr; }
-.stat-cell {
-  padding: 0.75rem 1rem;
-  text-align: center;
-  border-right: 1px solid rgba(255,255,255,0.5);
-}
+.stats-bar       { display: grid; grid-template-columns: repeat(3, 1fr); background: #2d6b8a; }
+.stats-bar--elec { background: #744210; }
+.stat-cell       { padding: 0.75rem 1rem; text-align: center; border-right: 1px solid rgba(255,255,255,.5); }
 .stat-cell:last-child { border-right: none; }
-.stat-label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #1a4f6e; }
-.stat-val   { font-size: 1rem; font-weight: 800; color: #1a2b3c; margin-top: 3px; }
+.stat-label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(255,255,255,0.8); }
+.stat-val   { font-size: 1rem; font-weight: 800; color: #fff; margin-top: 3px; }
 
 /* ── Adjustment notice ──────────────────────────────────────────────────────── */
-.adjustment-notice {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 1.25rem;
-  font-size: 0.8rem;
-  flex-wrap: wrap;
-}
-.adjustment-notice i { font-size: 0.75rem; }
+.adjustment-notice { display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 1.25rem; font-size: 0.8rem; flex-wrap: wrap; }
 .adj-shortfall { background: #fff5f5; color: #c53030; border-top: 1px solid #fed7d7; }
 .adj-surplus   { background: #f0fff4; color: #276749; border-top: 1px solid #c6f6d5; }
 
-/* ── Expanded content side padding ─────────────────────────────────────────── */
-.period-block--expanded .readings-section,
-.period-block--expanded .sectors-section,
-.period-block--expanded .period-actions,
-.period-block--expanded .msg-error,
-.period-block--expanded .anchor-grid,
-.period-block--expanded .recon-row {
-  margin: 0 1.25rem;
-}
-.period-block--expanded .stats-bar--sm { margin-bottom: 0; }
-/* Period billing spans full width — no side margin */
-.period-block--expanded .period-billing { margin: 0; }
-
-/* ── Closing bar ────────────────────────────────────────────────────────────── */
-.closing-bar {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  background: #f0f4f6;
-  border-top: 1px solid #e2e8f0;
-  margin-top: 0.75rem;
-}
-.closing-bar--resolved {
-  background: #eaf6f0;
-  border-top-color: #9ae6b4;
-}
-.closing-cell {
-  padding: 0.65rem 1rem;
-  text-align: center;
-  border-right: 1px solid #e2e8f0;
-}
-.closing-cell:last-child { border-right: none; }
-.closing-cell-label {
-  font-size: 0.68rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #718096;
-  margin-bottom: 0.25rem;
-}
-.closing-cell-val {
-  font-size: 0.96rem;
-  font-weight: 800;
-  font-family: 'Courier New', monospace;
-  color: #1a2b3c;
-}
-.closing-cell-sub {
-  font-size: 0.68rem;
-  color: #a0aec0;
-  margin-top: 2px;
-}
-
-/* ── Anchor grid ────────────────────────────────────────────────────────────── */
-.anchor-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.75rem;
-  padding: 0.75rem 0;
-}
-@media (max-width: 700px) { .anchor-grid { grid-template-columns: repeat(2, 1fr); } }
-.anchor-cell {
-  background: #f7fafb;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0.65rem 0.85rem;
-}
-.anchor-cell--open    { background: #ebf7fc; border-color: #B0D3DF; }
-.anchor-cell--pending { background: #fffbeb; border-color: #fef08a; }
-.anchor-cell-label {
-  font-size: 0.68rem; font-weight: 800; text-transform: uppercase;
-  letter-spacing: 0.05em; color: #718096; margin-bottom: 0.35rem;
-}
-.anchor-cell--open .anchor-cell-label    { color: #3294B8; }
-.anchor-cell--pending .anchor-cell-label { color: #b7791f; }
-.anchor-cell-val  { font-size: 1.05rem; font-weight: 800; font-family: 'Courier New', monospace; color: #1a2b3c; }
-.anchor-cell-sub  { font-size: 0.68rem; color: #a0aec0; margin-top: 2px; }
-.val-empty        { color: #a0aec0; font-style: italic; font-size: 0.95rem; }
-.val-provisional  { color: #c05621; }
-.val-calculated   { color: #2f855a; }
-.val-shortfall    { color: #c53030; }
-.val-surplus      { color: #276749; }
-
 /* ── Readings ───────────────────────────────────────────────────────────────── */
-.readings-section { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem 0 0.5rem; }
+.readings-section { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem 1.25rem 0.5rem; }
 .readings-header  { display: flex; align-items: baseline; gap: 0.5rem; }
 .readings-header-label { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #3294B8; }
 .readings-header-hint  { font-size: 0.7rem; color: #a0aec0; }
-
-.reading-row {
-  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
-  padding: 0.35rem 0; border-bottom: 1px dashed #e8f4f8;
-}
+.reading-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding: 0.35rem 0; border-bottom: 1px dashed #e8f4f8; }
 .reading-row:last-of-type { border-bottom: none; }
-.r-date   { width: 152px; flex: 0 0 152px; }
+.r-date  { width: 152px; flex: 0 0 152px; }
 .r-litres, .r-litres-display { font-size: 0.76rem; color: #a0aec0; white-space: nowrap; }
-.r-date-display  { font-size: 0.84rem; font-weight: 700; color: #2d3748; min-width: 150px; }
-.r-kl-display    { font-family: 'Courier New', monospace; font-size: 0.88rem; font-weight: 700; color: #3294B8; }
-.r-sector-avg    { font-size: 0.76rem; color: #718096; }
-.btn-rm {
-  background: none; border: none; color: #e53e3e; font-size: 0.88rem; cursor: pointer; padding: 0.1rem 0.3rem;
-}
-
+.r-date-display { font-size: 0.84rem; font-weight: 700; color: #2d3748; min-width: 150px; }
+.r-kl-display   { font-family: 'Courier New', monospace; font-size: 0.88rem; font-weight: 700; color: #3294B8; }
+.btn-rm { background: none; border: none; color: #e53e3e; font-size: 0.88rem; cursor: pointer; padding: 0.1rem 0.3rem; }
 .empty-readings { font-size: 0.82rem; color: #a0aec0; font-style: italic; padding: 0.25rem 0; }
 .reading-row--error { background: #fff5f5; border-radius: 6px; padding-left: 0.4rem; margin-left: -0.4rem; }
-.r-seq-error {
-  font-size: 0.74rem; color: #c53030; display: flex; align-items: center;
-  gap: 0.3rem; white-space: nowrap; font-weight: 600;
-}
-.add-reading-form { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1.5px solid #ebf7fc; }
+.r-seq-error { font-size: 0.74rem; color: #c53030; display: flex; align-items: center; gap: 0.3rem; white-space: nowrap; font-weight: 600; }
+
+/* ── Date input with calendar icon ─────────────────────────────────────────── */
+.date-wrap  { position: relative; display: flex; align-items: center; }
+.date-icon  { position: absolute; left: 0.65rem; color: #3294B8; font-size: 0.78rem; pointer-events: none; z-index: 1; }
+.date-wrap .f-input { padding-left: 2rem; }
 
 /* ── Sectors ────────────────────────────────────────────────────────────────── */
-.sectors-section { display: flex; flex-direction: column; gap: 0.5rem; padding-bottom: 0.25rem; }
-.sectors-label { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #718096; padding-top: 0.25rem; }
+.sectors-section { display: flex; flex-direction: column; gap: 0.5rem; padding: 0 1.25rem 0.75rem; }
+.sectors-label   { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #718096; padding-top: 0.25rem; }
+
+/* ── Closing bar ────────────────────────────────────────────────────────────── */
+.closing-bar { display: grid; grid-template-columns: repeat(3, 1fr); background: #f0f4f6; border-top: 1px solid #e2e8f0; margin-top: 0.75rem; }
+.closing-bar--elec    { background: #2d2d0a; }
+.closing-bar--resolved { background: #eaf6f0; border-top-color: #9ae6b4; }
+.closing-bar--elec.closing-bar--resolved { background: #1a3a1a; }
+.closing-cell { padding: 0.65rem 1rem; text-align: center; border-right: 1px solid rgba(255,255,255,.3); }
+.closing-cell:last-child { border-right: none; }
+.closing-cell-label { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #718096; margin-bottom: 0.25rem; }
+.closing-bar--elec .closing-cell-label { color: #a0aec0; }
+.closing-cell-val { font-size: 0.96rem; font-weight: 800; font-family: 'Courier New', monospace; color: #1a2b3c; }
+.closing-bar--elec .closing-cell-val { color: #e2e8f0; }
+.closing-cell-sub { font-size: 0.68rem; color: #a0aec0; margin-top: 2px; }
+.val-empty       { color: #a0aec0; font-style: italic; font-size: 0.95rem; }
+.val-provisional { color: #c05621; }
+.val-calculated  { color: #2f855a; }
+.val-shortfall   { color: #c53030; }
+.val-surplus     { color: #276749; }
 
 /* ── Actions ────────────────────────────────────────────────────────────────── */
-.period-actions { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; padding: 0.5rem 0; }
-.btn-add-reading {
-  padding: 0.42rem 1rem;
-  background: transparent; border: 2px solid #3294B8; border-radius: 7px;
-  color: #3294B8; font-size: 0.84rem; font-weight: 700; cursor: pointer; transition: all 0.15s;
-  display: flex; align-items: center; gap: 0.4rem;
-}
+.period-actions { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; padding: 0.5rem 1.25rem; }
+.btn-add-reading { padding: 0.42rem 1rem; background: transparent; border: 2px solid #3294B8; border-radius: 7px; color: #3294B8; font-size: 0.84rem; font-weight: 700; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 0.4rem; }
 .btn-add-reading:hover { background: #3294B8; color: #fff; }
-.btn-calc {
-  padding: 0.45rem 1.75rem;
-  background: #2d3748; color: #fff; border: none; border-radius: 7px;
-  font-size: 0.88rem; font-weight: 800; cursor: pointer; transition: background 0.15s;
-}
-.btn-calc:hover:not(:disabled) { background: #1a202c; }
-.btn-calc:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-add-period {
-  padding: 0.38rem 1rem;
-  background: #3294B8; color: #fff; border: none; border-radius: 7px;
-  font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: background 0.15s; white-space: nowrap;
-}
-.btn-add-period:hover { background: #2a7a9e; }
-.btn-add-period-bottom {
-  padding: 0.45rem 1.5rem;
-  background: #3294B8; color: #fff; border: none; border-radius: 7px;
-  font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: background 0.15s; align-self: flex-start;
-  display: flex; align-items: center; gap: 0.4rem;
-}
-.btn-add-period-bottom:hover { background: #2a7a9e; }
-.btn-save-reading {
-  padding: 0.42rem 1rem;
-  background: #3294B8; color: #fff; border: none; border-radius: 7px;
-  font-size: 0.84rem; font-weight: 700; cursor: pointer; transition: background 0.15s;
-  display: flex; align-items: center; gap: 0.35rem;
-}
-.btn-save-reading:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-save-reading:hover:not(:disabled) { background: #2a7a9e; }
+.btn-calc { padding: 0.45rem 1.75rem; background: #3294B8; color: #fff; border: none; border-radius: 7px; font-size: 0.88rem; font-weight: 800; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; gap: 0.4rem; }
+.btn-calc:hover:not(:disabled) { background: #2a7a9e; }
+.btn-calc:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-add-period-bottom { padding: 0.45rem 1.5rem; background: #3294B8; color: #fff; border: none; border-radius: 7px; font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: background 0.15s; align-self: flex-start; display: flex; align-items: center; gap: 0.4rem; }
+.btn-add-period-bottom:hover:not(:disabled) { background: #2a7a9e; }
+.btn-add-period-bottom:disabled { opacity: 0.5; cursor: not-allowed; }
+.calc-block-hint { font-size: 0.78rem; color: #c05621; display: flex; align-items: center; gap: 0.3rem; font-weight: 600; }
+.tab-no-data { display: flex; align-items: center; gap: 0.6rem; padding: 1.25rem 1.5rem; font-size: 0.88rem; color: #718096; font-style: italic; border-top: 1px solid #e8f4f8; }
 
 /* ── Tables ─────────────────────────────────────────────────────────────────── */
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-.data-table th {
-  background: #f0f8fb; padding: 0.45rem 0.75rem; text-align: left;
-  font-size: 0.74rem; font-weight: 800; color: #3294B8; border-bottom: 2px solid #B0D3DF;
-}
+.data-table th { background: #f0f8fb; padding: 0.45rem 0.75rem; text-align: left; font-size: 0.74rem; font-weight: 800; color: #3294B8; border-bottom: 2px solid #B0D3DF; }
 .data-table td { padding: 0.4rem 0.75rem; border-bottom: 1px solid #f0f8fb; color: #2d3748; }
 .data-table tr:hover td { background: #f7fbfd; }
 .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .data-table .total-row td { font-weight: 800; background: #f0f8fb !important; border-top: 2px solid #B0D3DF; }
 
-/* ── Billing section (inside period block) ──────────────────────────────────── */
-.period-billing {
-  background: #1a2b3c;
-  border-top: 2px solid #2d3748;
-  padding: 1rem 1.25rem 1.25rem;
-}
-.period-billing-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.78rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: #B0D3DF;
-  margin-bottom: 0.85rem;
-}
+/* ── Period billing section ─────────────────────────────────────────────────── */
+.period-billing { background: #1a2b3c; border-top: 2px solid #2d3748; }
+.period-billing-header { display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: #B0D3DF; padding: 0.85rem 1.25rem 0.5rem; }
 .period-billing-header i { font-size: 0.82rem; color: #3294B8; }
-.period-billing .bill-stat {
-  background: rgba(255,255,255,0.06);
-  border-color: rgba(176,211,223,0.2);
-}
-.period-billing .bill-stat-label { color: #B0D3DF; }
-.period-billing .bill-stat-val   { color: #fff; }
-.period-billing .bill-stat--total { background: #3294B8; border-color: #3294B8; }
-.period-billing .tier-label { color: #B0D3DF; }
-.period-billing .data-table th { background: rgba(255,255,255,0.05); color: #B0D3DF; border-color: rgba(176,211,223,0.3); }
-.period-billing .data-table td { color: #e2e8f0; border-color: rgba(255,255,255,0.06); }
-.period-billing .data-table tr:hover td { background: rgba(255,255,255,0.05); }
-.period-billing .data-table .total-row td { background: rgba(255,255,255,0.08) !important; border-color: rgba(176,211,223,0.3); }
 
-.bill-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem; }
-.bill-stat {
-  flex: 1; min-width: 130px; padding: 0.75rem 1rem;
-  background: #f7fafb; border: 1.5px solid #e2e8f0; border-radius: 8px;
-}
-.bill-stat--total { background: #1a2b3c; border-color: #1a2b3c; }
-.bill-stat--total .bill-stat-label, .bill-stat--total .bill-stat-val { color: #fff; }
-.bill-stat-label { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #718096; }
-.bill-stat-val   { font-size: 1.05rem; font-weight: 800; color: #1a2b3c; margin-top: 3px; }
-.tier-section    { margin-top: 0.5rem; }
-.tier-label      { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #718096; margin-bottom: 0.5rem; }
+.bill-meter-section { border-bottom: 1px solid rgba(255,255,255,.08); padding: 0.75rem 1.25rem; }
+.bill-meter-section:last-child { border-bottom: none; }
+.bill-meter-hdr { display: flex; align-items: center; gap: 0.5rem; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.65rem; }
+.bill-meter-hdr--water   { color: #90cdf4; }
+.bill-meter-hdr--elec    { color: #f6d860; }
+.bill-meter-hdr--generic { color: #b794f4; }
+.bill-meter-hdr--adj     { color: #fbd38d; }
 
-/* ── Graph ──────────────────────────────────────────────────────────────────── */
-.usage-graph  { margin-top: 0.75rem; }
-.graph-title  { font-size: 0.7rem; font-weight: 800; color: #718096; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
-.graph-bars   { display: flex; align-items: flex-end; gap: 5px; height: 140px; padding-bottom: 24px; position: relative; }
-.graph-bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1; min-width: 24px; height: 100%; }
-.graph-bar-num  { font-size: 0.62rem; color: #718096; margin-bottom: 2px; white-space: nowrap; }
-.graph-bar { width: 100%; max-width: 44px; background: linear-gradient(180deg, #3294B8, #2a7a9e); border-radius: 4px 4px 0 0; transition: height 0.3s; }
-.graph-bar-date { font-size: 0.62rem; color: #a0aec0; white-space: nowrap; margin-top: 2px; position: absolute; bottom: 0; }
+/* ── Adjustment detail ── */
+.bill-adj-section { border-top: 1px solid rgba(255,255,255,.1); }
+.adj-detail-row { background: rgba(255,255,255,.04); border-radius: 6px; padding: 0.7rem 0.85rem; margin-top: 0.5rem; }
+.adj-detail-period { font-size: 0.78rem; font-weight: 700; color: #e2e8f0; margin-bottom: 0.55rem; display: flex; align-items: center; gap: 0.4rem; }
+.adj-detail-period i { color: #fbd38d; }
+.adj-detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 0.5rem; }
+.adj-cell { }
+.adj-cell-label { font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.06em; color: #718096; margin-bottom: 0.2rem; }
+.adj-cell-val   { font-size: 0.88rem; font-weight: 800; color: #e2e8f0; }
+.adj-cell-sub   { font-size: 0.76rem; font-weight: 600; margin-top: 0.1rem; }
+.adj-reason { font-size: 0.75rem; color: #a0aec0; display: flex; align-items: center; gap: 0.35rem; border-top: 1px solid rgba(255,255,255,.08); padding-top: 0.45rem; margin-top: 0.1rem; }
+.adj-reason i { color: #fbd38d; }
+.bill-meter-consumption  { font-size: 0.72rem; font-weight: 600; color: #718096; margin-left: auto; font-family: 'Courier New', monospace; }
 
-/* ── Reconciliation ─────────────────────────────────────────────────────────── */
-.recon-row {
-  padding: 0.5rem 0.85rem; border-radius: 6px; font-size: 0.82rem; font-weight: 600; margin-bottom: 0.5rem;
-}
-.recon--short   { background: #fff5f5; color: #c53030; border-left: 3px solid #fc8181; }
-.recon--surplus { background: #f0fff4; color: #276749; border-left: 3px solid #68d391; }
+.bill-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem; }
+.bill-stat { flex: 1; min-width: 120px; padding: 0.65rem 0.85rem; background: rgba(255,255,255,.05); border: 1px solid rgba(176,211,223,.15); border-radius: 7px; }
+.bill-stat-label { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #B0D3DF; }
+.bill-stat-val   { font-size: 1rem; font-weight: 800; color: #fff; margin-top: 3px; }
+.tier-section { margin-top: 0.25rem; }
+.tier-label   { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #B0D3DF; margin-bottom: 0.4rem; }
+.period-billing .data-table th { background: rgba(255,255,255,.05); color: #B0D3DF; border-color: rgba(176,211,223,.3); }
+.period-billing .data-table td { color: #e2e8f0; border-color: rgba(255,255,255,.06); }
+.period-billing .data-table tr:hover td { background: rgba(255,255,255,.05); }
+.period-billing .data-table .total-row td { background: rgba(255,255,255,.08) !important; border-color: rgba(176,211,223,.3); }
 
-/* ── Status badges ──────────────────────────────────────────────────────────── */
-.status-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; margin-left: 0.3rem; }
-.status-provisional { background: #fffbeb; color: #b7791f; border: 1px solid #f6e05e; }
-.status-calculated  { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; }
-.status-actual      { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
+/* ── Grand total ────────────────────────────────────────────────────────────── */
+.bill-grand-total { padding: 0.75rem 1.25rem; background: rgba(50,148,184,.12); border-top: 1px solid rgba(176,211,223,.2); display: flex; flex-direction: column; gap: 0.25rem; }
+.bgt-row  { display: flex; justify-content: space-between; font-size: 0.84rem; color: #B0D3DF; }
+.bgt-total { display: flex; justify-content: space-between; font-size: 1.1rem; font-weight: 800; color: #fff; padding-top: 0.4rem; border-top: 1px solid rgba(255,255,255,.15); margin-top: 0.1rem; }
 
-/* ── Messages ───────────────────────────────────────────────────────────────── */
-.msg-error {
-  padding: 0.5rem 0.75rem; background: #fff5f5; border: 1.5px solid #fc8181;
-  border-radius: 6px; color: #c53030; font-size: 0.83rem; margin-bottom: 0.25rem;
-}
+/* ── Error / misc ───────────────────────────────────────────────────────────── */
+.msg-error { padding: 0.5rem 0.75rem; background: #fff5f5; border: 1.5px solid #fc8181; border-radius: 6px; color: #c53030; font-size: 0.83rem; margin: 0 1.25rem 0.25rem; }
 
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .cp { padding: 1rem; }
-  .anchor-grid { grid-template-columns: repeat(2, 1fr); }
   .stats-bar { grid-template-columns: 1fr; }
-  .bill-grid { flex-direction: column; }
   .closing-bar { grid-template-columns: 1fr; }
+  .bill-grid { flex-direction: column; }
 }
+
+/* ── Alarm Modal (ALM-001) ──────────────────────────────────────────────────── */
+.alarm-overlay {
+  position: fixed; inset: 0; background: rgba(10,20,40,.55); z-index: 9000;
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+}
+.alarm-modal {
+  background: #fff; border-radius: 14px; width: 100%; max-width: 480px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25); overflow: hidden;
+  font-family: 'Nunito', sans-serif;
+}
+.alarm-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.25rem; background: #fef3c7; border-bottom: 1px solid #fde68a;
+}
+.alarm-modal-title {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-weight: 800; font-size: 1rem; color: #92400e;
+}
+.alarm-modal-title i { font-size: 1.1rem; }
+.alarm-modal-close {
+  background: none; border: none; cursor: pointer; color: #92400e;
+  font-size: 1rem; padding: 0.2rem; border-radius: 4px;
+}
+.alarm-modal-close:hover { background: #fde68a; }
+.alarm-modal-body { padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+.alarm-modal-item { display: flex; gap: 0.85rem; align-items: flex-start; }
+.alarm-modal-icon {
+  width: 2.4rem; height: 2.4rem; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; flex-shrink: 0; font-size: 1rem;
+}
+.alarm-modal-icon--water { background: #e8f4f8; color: #2a7a9e; }
+.alarm-modal-icon--elec  { background: #fef3c7; color: #92400e; }
+.alarm-modal-msg { font-weight: 700; font-size: 0.92rem; color: #1a2b3c; margin-bottom: 0.3rem; }
+.alarm-modal-sub { font-size: 0.78rem; color: #718096; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.alarm-ref { font-family: 'Courier New', monospace; font-weight: 700; color: #2a7a9e;
+  background: #e8f4f8; padding: 0.1rem 0.4rem; border-radius: 4px; }
+.alarm-modal-footer { padding: 0.9rem 1.25rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; }
+.alarm-dismiss {
+  padding: 0.45rem 1.5rem; background: #2d3748; color: #fff; border: none;
+  border-radius: 8px; font-size: 0.88rem; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; gap: 0.4rem; transition: background 0.15s;
+}
+.alarm-dismiss:hover { background: #1a202c; }
 </style>

@@ -109,6 +109,8 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     // --- USER SETUP (User management only — no account/meter logic) ---
     Route::get('user/setup', [UserAccountSetupController::class, 'userSetupIndex'])->name('user.setup');
     Route::post('user/create', [UserAccountSetupController::class, 'storeUserOnly'])->name('user.create');
+    Route::get('user/{id}/accounts', [UserAccountSetupController::class, 'userAccounts'])->name('user.accounts');
+    Route::patch('user/{id}', [UserAccountSetupController::class, 'editUser'])->name('user.edit');
     Route::post('user/reset-password', [UserAccountSetupController::class, 'resetPassword'])->name('user.reset-password');
     Route::patch('user/{id}/toggle-status', [UserAccountSetupController::class, 'toggleStatus'])->name('user.toggle-status');
     Route::delete('user/{id}', [UserAccountSetupController::class, 'destroyUser'])->name('user.destroy');
@@ -342,6 +344,7 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::post('calculator/compute', [\App\Http\Controllers\Admin\CalculatorController::class, 'compute'])->name('calculator.compute');
     Route::post('calculator/compute-charge', [\App\Http\Controllers\Admin\CalculatorController::class, 'computeCharge'])->name('calculator.compute-charge');
     Route::get('calculator/meter/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'getMeterData'])->name('calculator.meter-data');
+    Route::get('calculator/account/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'getAccountData'])->name('calculator.account-data');
     Route::post('calculator/reading', [\App\Http\Controllers\Admin\CalculatorController::class, 'addReading'])->name('calculator.add-reading');
     Route::delete('calculator/reading/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'deleteReading'])->name('calculator.delete-reading');
 
@@ -397,7 +400,10 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('/region/zones/{regionId}', [AdminController::class, 'getRegionZones'])->name('region.zones');
 
     // --- ALARMS ---
-    Route::get('alarms', fn () => Inertia::render('Admin/Alarms'))->name('alarms');
+    Route::get('alarms', function () {
+        $alarms = \App\Models\AlarmDefinition::orderBy('code')->get();
+        return Inertia::render('Admin/Alarms', ['alarms' => $alarms]);
+    })->name('alarms');
 
     // --- ADS & CONTENT MANAGEMENT ---
     Route::get('ads', fn () => Inertia::render('Admin/Ads'))->name('ads-list');

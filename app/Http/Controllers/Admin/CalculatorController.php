@@ -53,7 +53,7 @@ class CalculatorController extends Controller
                 'name'           => $t->template_name,
                 'region_name'    => $t->region?->name,
                 'billing_day'    => $t->billing_day,
-                'vat_rate'       => $t->vat_rate ?? $t->vat_percentage ?? 15,
+                'vat_rate'       => $t->vat_percentage ?? $t->vat_rate ?? 15,
                 'is_water'       => (bool) $t->is_water,
                 'is_electricity' => (bool) $t->is_electricity,
             ]);
@@ -90,17 +90,32 @@ class CalculatorController extends Controller
      * monetary breakdown (tiers, fixed costs, customer overrides, VAT, total).
      * This is purely stateless — no bill record is read or written.
      */
+    /**
+     * POST /admin/calculator/compute-charge
+     *
+     * Stateless monetary breakdown for a given consumption.
+     *
+     * Extra params:
+     *   consumption_unit  – 'litres' (default) | 'kwh'
+     *                       When 'kwh', no ÷1000 conversion is applied in tier maths.
+     *   include_fixed     – true (default) | false
+     *                       Set false for electricity to avoid double-counting shared fixed costs.
+     */
     public function computeCharge(Request $request): JsonResponse
     {
         $request->validate([
             'tariff_template_id' => 'required|integer|exists:regions_account_type_cost,id',
             'consumption_litres' => 'required|integer|min:0',
             'account_id'         => 'nullable|integer|exists:accounts,id',
+            'consumption_unit'   => 'nullable|string|in:litres,kwh',
+            'include_fixed'      => 'nullable|boolean',
         ]);
 
-        $templateId  = (int) $request->tariff_template_id;
-        $consumption = (int) $request->consumption_litres;
-        $accountId   = $request->integer('account_id') ?: null;
+        $templateId    = (int) $request->tariff_template_id;
+        $consumption   = (int) $request->consumption_litres;
+        $accountId     = $request->integer('account_id') ?: null;
+        $isKwh         = ($request->input('consumption_unit') === 'kwh');
+        $includeFixed  = $request->boolean('include_fixed', true);
 
         try {
             $template = DB::table('regions_account_type_cost')->where('id', $templateId)->first();
@@ -111,26 +126,36 @@ class CalculatorController extends Controller
             $calendar   = new Calendar();
             $calculator = new Calculator($calendar);
 
+            // Use rawUnits for electricity (kWh billed directly, no ÷1000)
+            $rawUnits     = $isKwh || (bool) ($template->is_electricity ?? false);
             $tiers        = $calculator->loadTierDefinitions($templateId, $template);
-            $chargeResult = $calculator->applyTieredRates($consumption, $tiers);
-            $fixedResult  = $calculator->applyFixedCosts($templateId);
+            $chargeResult = $calculator->applyTieredRates($consumption, $tiers, $rawUnits);
+
+            $fixedResult = ['fixed_total' => 0.0, 'fixed_breakdown' => []];
+            if ($includeFixed) {
+                $fixedResult = $calculator->applyFixedCosts($templateId);
+            }
 
             $overrideResult = ['override_total' => 0.0, 'override_breakdown' => []];
-            if ($accountId) {
+            if ($accountId && $includeFixed) {
                 $overrideResult = $calculator->applyCustomerOverrides($accountId);
             }
 
-            $vatRate         = (float) ($template->vat_rate ?? $template->vat_percentage ?? 15.0);
+            $vatRate         = (float) ($template->vat_percentage ?? $template->vat_rate ?? 15.0);
             $fixedVatable    = array_sum(array_map(fn ($f) => $f['is_vatable'] ? $f['amount'] : 0.0, $fixedResult['fixed_breakdown']));
             $overrideVatable = array_sum(array_map(fn ($o) => ($o['is_vatable'] ?? true) ? $o['amount'] : 0.0, $overrideResult['override_breakdown']));
             $vatAmount       = $calculator->computeVat($chargeResult['usage_charge'] + $fixedVatable + $overrideVatable, $vatRate);
             $billTotal       = round($chargeResult['usage_charge'] + $fixedResult['fixed_total'] + $overrideResult['override_total'] + $vatAmount, 2);
 
+            // Consumption label adapts to unit
+            $consumptionKl = $rawUnits ? null : round($consumption / 1000, 3);
+
             return response()->json([
                 'success' => true,
                 'data'    => [
                     'consumption_litres'  => $consumption,
-                    'consumption_kl'      => round($consumption / 1000, 3),
+                    'consumption_kl'      => $consumptionKl,
+                    'consumption_unit'    => $isKwh ? 'kwh' : 'litres',
                     'usage_charge'        => $chargeResult['usage_charge'],
                     'tier_breakdown'      => $chargeResult['tier_breakdown'],
                     'fixed_total'         => $fixedResult['fixed_total'],
@@ -145,6 +170,90 @@ class CalculatorController extends Controller
             \Log::error('CalculatorController::computeCharge', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+    }
+
+    // ── Account data for USER+ACCOUNT mode ───────────────────────────────────
+
+    /**
+     * GET /admin/calculator/account/{id}
+     *
+     * Returns all meters and ALL their readings for an account.
+     * The frontend reconstructs periods client-side from bill_day + readings.
+     */
+    public function getAccountData(int $accountId): JsonResponse
+    {
+        $account = Account::select('id', 'account_name', 'account_number', 'bill_day', 'tariff_template_id')
+            ->find($accountId);
+
+        if (!$account) {
+            return response()->json(['success' => false, 'message' => 'Account not found'], 404);
+        }
+
+        $tariff = null;
+        if ($account->tariff_template_id) {
+            $tariffRow = DB::table('regions_account_type_cost')->where('id', $account->tariff_template_id)->first();
+            if ($tariffRow) {
+                $tariff = [
+                    'id'             => $tariffRow->id,
+                    'template_name'  => $tariffRow->template_name,
+                    'billing_day'    => $tariffRow->billing_day ?? $account->bill_day,
+                    'is_water'       => (bool) ($tariffRow->is_water ?? true),
+                    'is_electricity' => (bool) ($tariffRow->is_electricity ?? false),
+                    'vat_rate'       => (float) ($tariffRow->vat_percentage ?? $tariffRow->vat_rate ?? 15.0),
+                ];
+            }
+        }
+
+        $meterRows = DB::table('meters')
+            ->where('account_id', $accountId)
+            ->get();
+
+        $meterTypeNames = DB::table('meter_types')->pluck('title', 'id');
+
+        $meters = [];
+        foreach ($meterRows as $m) {
+            $typeTitle = strtolower($meterTypeNames[$m->meter_type_id] ?? '');
+            $meterType = str_contains($typeTitle, 'water') ? 'water'
+                : (str_contains($typeTitle, 'elec') ? 'electricity' : 'other');
+
+            $readings = DB::table('meter_readings')
+                ->where('meter_id', $m->id)
+                ->orderBy('reading_date')
+                ->get(['id', 'reading_date', 'reading_value'])
+                ->map(fn ($r) => [
+                    'id'    => $r->id,
+                    'date'  => $r->reading_date,
+                    'value' => (float) $r->reading_value,
+                ])
+                ->values()
+                ->toArray();
+
+            $meters[] = [
+                'id'           => $m->id,
+                'meter_title'  => $m->meter_title,
+                'meter_number' => $m->meter_number,
+                'meter_type_id'=> $m->meter_type_id,
+                'meter_type'   => $meterType,
+                'readings'     => $readings,
+            ];
+        }
+
+        // Sort: water first, electricity second
+        usort($meters, fn ($a, $b) => ($a['meter_type'] === 'water' ? 0 : 1) <=> ($b['meter_type'] === 'water' ? 0 : 1));
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'account' => [
+                    'id'             => $account->id,
+                    'account_name'   => $account->account_name,
+                    'account_number' => $account->account_number,
+                    'bill_day'       => (int) $account->bill_day,
+                ],
+                'tariff'  => $tariff,
+                'meters'  => $meters,
+            ],
+        ]);
     }
 
     // ── Meter data for USER+ACCOUNT mode ────────────────────────────────────

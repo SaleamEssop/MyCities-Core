@@ -18,7 +18,7 @@
         class="mi-slot"
         :class="{
           'mi-slot--active': isFocused && cursorPos === i - 1,
-          'mi-slot--zero':   digits[i - 1] === 0,
+          'mi-slot--zero':   isLeadingZero(i - 1),
         }"
         @click.stop="setCursor(i - 1)"
       >
@@ -35,7 +35,7 @@
         class="mi-slot mi-slot--frac"
         :class="{
           'mi-slot--active': isFocused && cursorPos === i + 3,
-          'mi-slot--zero':   digits[i + 3] === 0,
+          'mi-slot--zero':   false,
         }"
         @click.stop="setCursor(i + 3)"
       >
@@ -97,6 +97,14 @@ watch(() => props.modelValue, (v) => {
     digits.value = klToDigits(v)
   }
 }, { immediate: true })
+
+// ── Leading-zero detection (only grey zeros before the first non-zero digit) ─
+function isLeadingZero (pos) {
+  for (let j = 0; j <= pos; j++) {
+    if (digits.value[j] !== 0) return false
+  }
+  return true
+}
 
 // ── Focus / blur ──────────────────────────────────────────
 function onFocus ()    { isFocused.value = true }

@@ -387,13 +387,21 @@ final class Calculator
      * @param array $tiers  from loadTierDefinitions()
      * @return array{usage_charge: float, tier_breakdown: array}
      */
-    public function applyTieredRates(int $usageL, array $tiers): array
+    /**
+     * Apply tiered rates to a consumption value.
+     *
+     * @param int   $usageUnits   Consumption in base units (litres for water, kWh for electricity).
+     * @param array $tiers        Tier definitions (min_units / max_units in the same base unit as $usageUnits).
+     * @param bool  $rawUnits     When true (electricity), units are NOT divided by 1000 before applying the rate.
+     *                            When false (water, default), units are converted L → kL ( ÷ 1000) before rate.
+     */
+    public function applyTieredRates(int $usageUnits, array $tiers, bool $rawUnits = false): array
     {
         if (empty($tiers)) {
             return ['usage_charge' => 0.0, 'tier_breakdown' => []];
         }
 
-        $remaining   = $usageL;
+        $remaining   = $usageUnits;
         $totalCharge = 0.0;
         $breakdown   = [];
 
@@ -403,22 +411,22 @@ final class Calculator
             }
             $capacity    = $tier['max_units'] === null ? $remaining : (int) max(0, $tier['max_units'] - $tier['min_units']);
             $unitsInTier = min($remaining, $capacity);
-            // Rates are per kL (or per kWh for electricity). Convert L → kL before applying rate.
-            $unitsKl     = $unitsInTier / 1000.0;
-            $amount      = round($unitsKl * $tier['rate_per_unit'], 4);
-            $breakdown[] = [
-                'tier'     => $i + 1,
-                'units'    => $unitsInTier,   // in L (for reference)
-                'units_kl' => round($unitsKl, 3),
-                'rate'     => $tier['rate_per_unit'],
-                'amount'   => $amount,
+            // For water: convert L → kL (÷ 1000). For electricity: kWh is already the billing unit.
+            $billingUnits = $rawUnits ? (float) $unitsInTier : ($unitsInTier / 1000.0);
+            $amount       = round($billingUnits * $tier['rate_per_unit'], 4);
+            $breakdown[]  = [
+                'tier'         => $i + 1,
+                'units'        => $unitsInTier,
+                'units_kl'     => round($billingUnits, 3),  // kL for water, kWh for electricity
+                'rate'         => $tier['rate_per_unit'],
+                'amount'       => $amount,
             ];
             $totalCharge += $amount;
             $remaining   -= $unitsInTier;
         }
 
         return [
-            'usage_charge'  => round($totalCharge, 2),
+            'usage_charge'   => round($totalCharge, 2),
             'tier_breakdown' => $breakdown,
         ];
     }
