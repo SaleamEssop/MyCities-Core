@@ -166,6 +166,14 @@
                 </div>
             </li>
 
+            <!-- Nav Item - App View -->
+            <li class="nav-item">
+                <a class="nav-link" href="{{ route('app-view') }}">
+                    <i class="fas fa-fw fa-mobile-alt"></i>
+                    <span>App View</span>
+                </a>
+            </li>
+
             <!-- Divider -->
             <hr class="sidebar-divider">
 

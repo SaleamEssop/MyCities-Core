@@ -5,12 +5,13 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <title>MyCities - {{ $landingTitle }}</title>
-    <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800,900" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { height: 100%; font-family: 'Nunito', sans-serif; }
-        
-        .hero-section {
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; font-family: 'Nunito', sans-serif; background: #f4f6f8; color: #333; }
+
+        /* ── Hero ───────────────────────────────────────────────── */
+        .hero {
             min-height: 100vh;
             background-image: url('{{ $backgroundUrl }}');
             background-size: cover;
@@ -21,143 +22,269 @@
             justify-content: center;
             position: relative;
         }
-        
-        .hero-section::before {
+        .hero::before {
             content: '';
             position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.3);
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
         }
-        
-        .hero-content {
+        .hero-box {
             position: relative;
             z-index: 1;
-            background: rgba(180, 100, 80, 0.7);
-            padding: 40px 60px;
-            border-radius: 8px;
-            max-width: 600px;
+            background: rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 48px 56px;
+            max-width: 520px;
+            width: calc(100% - 32px);
             text-align: center;
-            color: white;
+            color: #fff;
         }
-        
-        .hero-content h1 {
-            font-size: 28px;
+        .hero-box h1 {
+            font-size: 26px;
             font-weight: 300;
             font-style: italic;
-            margin-bottom: 30px;
-            line-height: 1.4;
+            line-height: 1.5;
+            margin-bottom: 32px;
         }
-        
-        .login-btn {
+        .hero-btn {
             display: inline-block;
-            background: rgba(139, 69, 61, 0.9);
-            color: white;
-            padding: 15px 50px;
+            background: #009BA4;
+            color: #fff;
+            padding: 14px 48px;
             text-decoration: none;
-            font-size: 16px;
-            font-weight: 600;
-            border-radius: 4px;
-            transition: background 0.3s;
+            font-size: 15px;
+            font-weight: 700;
+            border-radius: 6px;
+            letter-spacing: 0.5px;
+            transition: background 0.25s;
         }
-        
-        .login-btn:hover {
-            background: rgba(139, 69, 61, 1);
-        }
-        
-        .content-section {
-            padding: 60px 20px;
-            max-width: 1200px;
+        .hero-btn:hover { background: #007d85; }
+
+        /* ── Pages section ──────────────────────────────────────── */
+        .pages-section {
+            max-width: 860px;
             margin: 0 auto;
+            padding: 0 16px 48px;
         }
-        
-        .page-content {
-            background: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
+
+        /* Tab strip */
+        .tab-strip {
+            display: flex;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            background: #fff;
+            border-bottom: 2px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
-        
-        .page-content h2 {
-            color: #333;
-            margin-bottom: 20px;
-            font-size: 24px;
-        }
-        
-        .page-content p, .page-content div {
-            color: #666;
-            line-height: 1.8;
-        }
-        
-        .pages-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-            margin-top: 40px;
-        }
-        
-        .page-card {
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .page-card h3 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 20px;
-        }
-        
-        .page-card p {
-            color: #666;
-            line-height: 1.6;
+        .tab-strip::-webkit-scrollbar { display: none; }
+
+        .tab-btn {
+            flex-shrink: 0;
+            background: none;
+            border: none;
+            padding: 16px 22px;
+            font-family: 'Nunito', sans-serif;
             font-size: 14px;
+            font-weight: 600;
+            color: #718096;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            white-space: nowrap;
+            transition: color 0.2s, border-color 0.2s;
         }
-        
+        .tab-btn:hover { color: #009BA4; }
+        .tab-btn.active {
+            color: #009BA4;
+            border-bottom-color: #009BA4;
+        }
+
+        /* Content panels */
+        .tab-panel { display: none; padding: 32px 0; }
+        .tab-panel.active { display: block; }
+
+        /* Rendered Editor.js content styles */
+        .editorjs-content h1 { font-size: 2em;   font-weight: 700; margin: 0.6em 0 0.3em; color: #1a202c; }
+        .editorjs-content h2 { font-size: 1.5em;  font-weight: 700; margin: 0.6em 0 0.3em; color: #1a202c; }
+        .editorjs-content h3 { font-size: 1.25em; font-weight: 600; margin: 0.6em 0 0.3em; color: #2d3748; }
+        .editorjs-content h4 { font-size: 1.05em; font-weight: 600; margin: 0.5em 0 0.3em; color: #2d3748; }
+        .editorjs-content p  { margin-bottom: 14px; color: #4a5568; line-height: 1.75; }
+        .editorjs-content ul,
+        .editorjs-content ol { padding-left: 28px; margin-bottom: 14px; color: #4a5568; }
+        .editorjs-content li { margin-bottom: 6px; line-height: 1.7; }
+        .editorjs-content blockquote {
+            border-left: 4px solid #009BA4;
+            padding: 14px 20px;
+            background: #f0fafa;
+            margin: 20px 0;
+            font-style: italic;
+            color: #4a5568;
+            border-radius: 0 6px 6px 0;
+        }
+        .editorjs-content hr {
+            border: none;
+            border-top: 2px solid #e2e8f0;
+            margin: 28px 0;
+        }
+        .editorjs-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            margin: 16px 0;
+        }
+        .editorjs-content a  { color: #009BA4; text-decoration: underline; }
+        .editorjs-content code {
+            background: #edf2f7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .editorjs-content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1em;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 14px;
+        }
+        .editorjs-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+        }
+        .editorjs-content th,
+        .editorjs-content td {
+            border: 1px solid #e2e8f0;
+            padding: 10px 14px;
+            text-align: left;
+        }
+        .editorjs-content th { background: #f7fafc; font-weight: 600; }
+
+        /* Empty state */
+        .no-pages {
+            text-align: center;
+            padding: 60px 20px;
+            color: #a0aec0;
+        }
+        .no-pages p { margin-top: 12px; font-size: 15px; }
+
+        /* Footer */
         footer {
-            background: #333;
-            color: white;
+            background: #1a202c;
+            color: #a0aec0;
             text-align: center;
             padding: 20px;
-            font-size: 14px;
+            font-size: 13px;
+        }
+        footer a { color: #009BA4; text-decoration: none; }
+
+        @media (max-width: 480px) {
+            .hero-box { padding: 36px 24px; }
+            .hero-box h1 { font-size: 20px; }
+            .tab-btn { padding: 14px 16px; font-size: 13px; }
         }
     </style>
 </head>
 <body>
-    <!-- Hero Section -->
-    <section class="hero-section">
-        <div class="hero-content">
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-box">
             <h1>{{ $landingSubtitle }}</h1>
-            <a href="{{ url('/web-app') }}" class="login-btn">Login / Register</a>
+            <a href="{{ url('/web-app') }}" class="hero-btn">Login / Register</a>
         </div>
     </section>
-    
-    <!-- Content Section - Pages from Editor -->
-    @if($homePage && $homePage->content)
-    <section class="content-section">
-        <div class="page-content">
-            {!! $homePage->content !!}
-        </div>
-    </section>
-    @endif
-    
-    <!-- Additional Pages -->
-    @if($pages && $pages->count() > 0)
-    <section class="content-section">
-        <div class="pages-grid">
-            @foreach($pages as $page)
-            <div class="page-card">
-                <h3>{{ $page->title }}</h3>
-                <p>{!! \Illuminate\Support\Str::limit(strip_tags($page->content), 200) !!}</p>
-            </div>
+
+    @php
+        use BumpCore\EditorPhp\EditorPhp;
+
+        // Merge home page (first) and all other active pages into one ordered list
+        $allPages = collect();
+        if ($homePage) {
+            $allPages->push($homePage);
+        }
+        if ($pages && $pages->count() > 0) {
+            foreach ($pages as $p) {
+                $allPages->push($p);
+            }
+        }
+    @endphp
+
+    @if($allPages->count() > 0)
+    <section class="pages-section">
+
+        <!-- Scrollable tab strip -->
+        <nav class="tab-strip" role="tablist">
+            @foreach($allPages as $idx => $p)
+            <button
+                class="tab-btn {{ $idx === 0 ? 'active' : '' }}"
+                role="tab"
+                data-target="page-panel-{{ $p->id }}"
+                aria-selected="{{ $idx === 0 ? 'true' : 'false' }}"
+            >
+                @if($p->icon)<i class="{{ $p->icon }}" style="margin-right:6px;"></i>@endif
+                {{ $p->title }}
+            </button>
             @endforeach
+        </nav>
+
+        <!-- Content panels -->
+        @foreach($allPages as $idx => $p)
+        <div
+            id="page-panel-{{ $p->id }}"
+            class="tab-panel {{ $idx === 0 ? 'active' : '' }}"
+            role="tabpanel"
+        >
+            <div class="editorjs-content">
+                @if($p->content)
+                    {!! EditorPhp::make($p->content)->render() !!}
+                @else
+                    <div class="no-pages">
+                        <p>This page has no content yet.</p>
+                    </div>
+                @endif
+            </div>
         </div>
+        @endforeach
+
     </section>
     @endif
-    
+
     <footer>
         &copy; {{ date('Y') }} MyCities. All rights reserved.
     </footer>
+
+    <script>
+        // Tab switching — vanilla JS, no framework
+        document.querySelectorAll('.tab-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                // Deactivate all tabs and panels
+                document.querySelectorAll('.tab-btn').forEach(function(b) {
+                    b.classList.remove('active');
+                    b.setAttribute('aria-selected', 'false');
+                });
+                document.querySelectorAll('.tab-panel').forEach(function(p) {
+                    p.classList.remove('active');
+                });
+
+                // Activate clicked tab and its panel
+                btn.classList.add('active');
+                btn.setAttribute('aria-selected', 'true');
+                var target = document.getElementById(btn.dataset.target);
+                if (target) target.classList.add('active');
+
+                // Scroll tab into view (for overflow-x strip)
+                btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            });
+        });
+    </script>
+
 </body>
 </html>

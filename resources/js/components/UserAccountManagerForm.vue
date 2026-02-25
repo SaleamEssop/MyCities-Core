@@ -78,9 +78,6 @@
                                     <button type="button" class="btn btn-info btn-sm btn-circle mr-1" @click="openDashboard(user)" title="View Dashboard (Laravel)">
                                         <i class="fas fa-chart-line"></i>
                                     </button>
-                                    <button type="button" class="btn btn-success btn-sm btn-circle mr-1" @click="openWebApp(user)" title="View WebApp">
-                                        <i class="fas fa-desktop"></i>
-                                    </button>
                                     <button type="button" class="btn btn-primary btn-sm btn-circle mr-1" @click="viewUser(user.id)" title="View/Edit">
                                         <i class="fas fa-eye"></i>
                                     </button>
@@ -1187,38 +1184,6 @@ async function openDashboard(user) {
     window.open(`/admin/user-accounts/dashboard/${accountId}`, '_blank');
 }
 
-async function openWebApp(user) {
-    console.log('openWebApp called for user:', user);
-    let accountId = getFirstAccountId(user);
-    
-    // If we don't have account ID, fetch user data to get it
-    if (!accountId) {
-        try {
-            const response = await fetch(buildUrl(props.apiUrls.getUserData, user.id), {
-                headers: {
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': props.csrfToken
-                }
-            });
-            const data = await response.json();
-            
-            if (data.status === 200 && data.data) {
-                const userData = data.data;
-                accountId = getFirstAccountId(userData);
-            }
-        } catch (error) {
-            console.error('Error fetching user data:', error);
-            showNotification('Error loading account information', 'danger');
-            return;
-        }
-    }
-    
-    if (accountId) {
-        window.open(`/admin/user-accounts/manager/webApp/${accountId}`, '_blank');
-    } else {
-        showNotification('No account found for this user. Please create an account first.', 'warning');
-    }
-}
 
 async function searchUsers() {
     loading.value = true;

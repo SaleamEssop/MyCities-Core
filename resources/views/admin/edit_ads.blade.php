@@ -52,9 +52,8 @@
                     </div>
                     <div class="form-group">
                         <label><strong>Description :</strong></label>
-                        <textarea class="form-control" name="description-editor">
-                            {{ $ad->description }}
-                        </textarea>
+                        <textarea id="description-editor" name="description-editor" style="display:none;">{{ $ad->description }}</textarea>
+                        <div id="ads-editorjs" style="border:1px solid #d1d3e2;border-radius:0.35rem;min-height:250px;background:#fff;padding:4px 0;"></div>
                     </div>
                     @csrf
                     <input type="hidden" name="ad_id" value="{{ $ad->id }}" />
@@ -66,18 +65,82 @@
     <!-- /.container-fluid -->
 @endsection
 
-@section('page-level-scripts')
-    <script src="//cdn.ckeditor.com/4.14.1/standard/ckeditor.js"></script>
-    <script src="//cdn.ckeditor.com/4.14.1/standard/adapters/jquery.js"></script>
-    <script type="text/javascript">
-        $(document).ready(function() {
-            $('#acc-dataTable').dataTable();
-            //$('.ckeditor').ckeditor();
+@section('page-level-styles')
+<style>
+    #ads-editorjs { border:1px solid #d1d3e2; border-radius:0.35rem; min-height:250px; background:#fff; padding:4px 0; }
+    .ce-block__content, .ce-toolbar__content { max-width: 100% !important; }
+    .codex-editor { font-family: inherit; }
+</style>
+@endsection
 
-            CKEDITOR.replace('description-editor', {
-                filebrowserUploadUrl: "{{route('ckeditor.image-upload', ['_token' => csrf_token() ])}}",
-                filebrowserUploadMethod: 'form'
-            });
+@section('page-level-scripts')
+    <!-- Editor.js core + tools -->
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/editorjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/header@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/list@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/quote@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/delimiter@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/image@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/underline@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/marker@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/inline-code@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/editorjs-undo@latest"></script>
+    <script>
+        const adsTextarea   = document.getElementById('description-editor');
+        const adsRawContent = adsTextarea.value.trim();
+
+        let adsInitialData = { blocks: [] };
+        if (adsRawContent) {
+            try {
+                adsInitialData = JSON.parse(adsRawContent);
+            } catch (e) {
+                adsInitialData = { blocks: [{ type: 'paragraph', data: { text: adsRawContent } }] };
+            }
+        }
+
+        const adsCsrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+        const adsEditor = new EditorJS({
+            holder: 'ads-editorjs',
+            tools: {
+                header:    { class: Header,    inlineToolbar: true, config: { levels: [1,2,3,4], defaultLevel: 2 } },
+                list:      { class: List,      inlineToolbar: true },
+                quote:     { class: Quote,     inlineToolbar: true },
+                delimiter: Delimiter,
+                image: {
+                    class: ImageTool,
+                    config: {
+                        endpoints: {
+                            byFile: '{{ route("editor.image.upload") }}',
+                            byUrl:  '{{ route("editor.image.by-url") }}',
+                        },
+                        additionalRequestHeaders: {
+                            'X-CSRF-TOKEN': adsCsrfToken,
+                        },
+                        captionPlaceholder: 'Image caption (optional)',
+                    },
+                },
+                underline: Underline,
+                marker:    Marker,
+                inlineCode: InlineCode,
+            },
+            data: adsInitialData,
+            placeholder: 'Write your ad description...',
+            onChange: async () => {
+                const saved = await adsEditor.save();
+                adsTextarea.value = JSON.stringify(saved);
+            },
+            onReady: () => {
+                new Undo({ editor: adsEditor });
+            },
+        });
+
+        // Safety-net sync on form submit
+        document.querySelector('form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const saved = await adsEditor.save();
+            adsTextarea.value = JSON.stringify(saved);
+            e.target.submit();
         });
     </script>
 @endsection

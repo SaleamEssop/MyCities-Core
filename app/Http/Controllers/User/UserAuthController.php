@@ -11,7 +11,7 @@ class UserAuthController extends Controller
 {
     public function showLogin()
     {
-        if (Auth::check()) {
+        if (Auth::check() && !request()->boolean('preview')) {
             return redirect()->route('user.dashboard');
         }
 
@@ -43,6 +43,6 @@ class UserAuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('user.login');
+        return redirect()->route('user.info');
     }
 }

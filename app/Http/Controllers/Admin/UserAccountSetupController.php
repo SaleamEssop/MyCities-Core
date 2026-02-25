@@ -186,10 +186,15 @@ class UserAccountSetupController extends Controller
      */
     public function resetPassword(Request $request)
     {
-        $request->validate(['user_id' => 'required|exists:users,id']);
+        $request->validate([
+            'user_id'  => 'required|exists:users,id',
+            'password' => 'nullable|string|min:6|max:100',
+        ]);
         try {
-            $newPassword = substr(str_shuffle('abcdefghjkmnpqrstuvwxyz23456789'), 0, 8);
-            $user = User::findOrFail($request->user_id);
+            $user        = User::findOrFail($request->user_id);
+            $newPassword = $request->filled('password')
+                ? $request->password
+                : substr(str_shuffle('abcdefghjkmnpqrstuvwxyz23456789'), 0, 8);
             $user->password = Hash::make($newPassword);
             $user->save();
             return response()->json([

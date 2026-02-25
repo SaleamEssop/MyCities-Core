@@ -38,6 +38,25 @@
               </select>
             </div>
           </div>
+          <!-- Current date override row -->
+          <div class="current-date-row">
+            <span class="current-date-label"><i class="fas fa-calendar-day"></i> Current Date</span>
+            <input type="date" v-model="test.currentDate" class="f-input current-date-input"
+              :min="test.periods.length ? test.periods[test.periods.length - 1].start : test.periodStart"
+              :max="props.today || localDateStr(new Date())"
+            />
+            <button
+              :class="['btn-date-toggle', test.currentDateActive ? 'btn-date-toggle--on' : 'btn-date-toggle--off']"
+              @click="test.currentDateActive = !test.currentDateActive"
+            >
+              <i :class="['fas', test.currentDateActive ? 'fa-toggle-on' : 'fa-toggle-off']"></i>
+              {{ test.currentDateActive ? 'Active' : 'Inactive' }}
+            </button>
+            <span v-if="test.currentDateActive" class="current-date-hint">
+              Simulating date: <strong>{{ fmt(test.currentDate) }}</strong>
+            </span>
+          </div>
+
           <div v-if="test.periodStart" class="period-chip-row">
             <span class="chip-period">{{ fmt(test.periodStart) }} → {{ fmt(test.periodEnd) }}</span>
             <span class="chip-days">{{ test.periodDays }} block days</span>
@@ -203,6 +222,12 @@
             </div>
             <template v-else-if="activeMeter(period) === 'water' && period.water">
 
+              <!-- Insufficient data notice (account mode, single initialization reading only) -->
+              <div v-if="period.water.insufficientData && mode === 'account'" class="insufficient-data-notice">
+                <i class="fas fa-exclamation-triangle"></i>
+                Unable to compute. A minimum of two readings are required for this app to successfully compute.
+              </div>
+
               <!-- Opening -->
               <div class="period-opening-row">
                 <span class="por-label">{{ pi === 0 && mode === 'test' ? 'Start Reading' : 'Opening Reading' }}</span>
@@ -230,6 +255,26 @@
                   <div class="stat-val">{{ period.water.stats ? 'R ' + fmtMoney(period.water.stats.projectedR) : '_ _' }}</div>
                 </div>
               </div>
+
+              <!-- Read Day countdown strip (current period only) -->
+              <template v-if="pi === activePeriods.length - 1">
+                <div v-if="readDayStatus(period).inWindow || readDayStatus(period).daysTo <= 0"
+                  :class="['read-day-strip', readDayStatus(period).daysTo < 0 ? 'read-day-strip--overdue' : readDayStatus(period).daysTo === 0 ? 'read-day-strip--today' : 'read-day-strip--soon']"
+                >
+                  <i :class="['fas', readDayStatus(period).daysTo < 0 ? 'fa-exclamation-circle' : 'fa-clock']"></i>
+                  <span v-if="readDayStatus(period).daysTo > 0">
+                    Read Day in <strong>{{ readDayStatus(period).daysTo }}</strong> day{{ readDayStatus(period).daysTo === 1 ? '' : 's' }}
+                    <span class="rds-date">({{ fmt(readDayStatus(period).readDay) }})</span>
+                  </span>
+                  <span v-else-if="readDayStatus(period).daysTo === 0">
+                    <strong>Read Day is today</strong> — please read your meter now.
+                    <span class="rds-date">({{ fmt(readDayStatus(period).readDay) }})</span>
+                  </span>
+                  <span v-else>
+                    Read Day was <strong>{{ Math.abs(readDayStatus(period).daysTo) }}</strong> day{{ Math.abs(readDayStatus(period).daysTo) === 1 ? '' : 's' }} ago — last read {{ readDayStatus(period).daysSinceLast }} day{{ readDayStatus(period).daysSinceLast === 1 ? '' : 's' }} ago.
+                  </span>
+                </div>
+              </template>
 
               <!-- Adjustment notice -->
               <div
@@ -361,6 +406,12 @@
             </div>
             <template v-else-if="activeMeter(period) === 'electricity' && period.electricity">
 
+              <!-- Insufficient data notice (account mode, single initialization reading only) -->
+              <div v-if="period.electricity.insufficientData && mode === 'account'" class="insufficient-data-notice">
+                <i class="fas fa-exclamation-triangle"></i>
+                Unable to compute. A minimum of two readings are required for this app to successfully compute.
+              </div>
+
               <!-- Opening -->
               <div class="period-opening-row period-opening-row--elec">
                 <span class="por-label por-label--elec">{{ pi === 0 && mode === 'test' ? 'Start Reading' : 'Opening Reading' }}</span>
@@ -480,7 +531,7 @@
                 <i class="fas fa-plus"></i> Add Reading
               </button>
               <button class="btn-calc" @click="calcPeriod(pi)"
-                :disabled="!canCalcPeriod(period) || period.calculating">
+                :disabled="!canCalcPeriod(period, pi) || period.calculating">
                 <i v-if="period.calculating" class="fas fa-circle-notch fa-spin"></i>
                 {{ period.calculating ? 'Calculating…' : 'Calculate' }}
               </button>
@@ -488,8 +539,8 @@
                 <i class="fas" :class="period.showBill ? 'fa-eye-slash' : 'fa-file-invoice-dollar'"></i>
                 {{ period.showBill ? 'Hide Bill' : 'View Bill' }}
               </button>
-              <span v-if="!canCalcPeriod(period) && !period.calculating" class="calc-block-hint">
-                <i class="fas fa-info-circle"></i> {{ calcBlockReason(period) }}
+              <span v-if="!canCalcPeriod(period, pi) && !period.calculating" class="calc-block-hint">
+                <i class="fas fa-info-circle"></i> {{ calcBlockReason(period, pi) }}
               </span>
             </div>
             <div v-if="period.calcError" class="msg-error">{{ period.calcError }}</div>
@@ -700,7 +751,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import MeterInput  from '@/components/MeterInput.vue'
 import ElecInput   from '@/components/ElecInput.vue'
@@ -735,15 +786,83 @@ function litresToKlStr (litres) {
 // TEST MODE
 // ══════════════════════════════════════════════════════════
 const test = ref({
-  billDay:        1,
-  startMonth:     props.today ? props.today.slice(0, 7) : new Date().toISOString().slice(0, 7),
-  templateId:     '',
-  periodStart:    '',
-  periodEnd:      '',
-  periodDays:     0,
-  periods:        [],
-  activeMeterTab: 'water',   // top-level tab: 'water' | 'electricity'
+  billDay:           1,
+  startMonth:        props.today ? props.today.slice(0, 7) : new Date().toISOString().slice(0, 7),
+  templateId:        '',
+  periodStart:       '',
+  periodEnd:         '',
+  periodDays:        0,
+  periods:           [],
+  activeMeterTab:    'water',   // top-level tab: 'water' | 'electricity'
+  currentDate:       props.today || localDateStr(new Date()),
+  currentDateActive: false,
 })
+
+// Effective "today": uses the test-mode date override when active, otherwise the server date.
+// Account mode always uses props.today (real server date).
+const effectiveToday = computed(() => {
+  if (mode.value === 'test' && test.value.currentDateActive && test.value.currentDate) {
+    return test.value.currentDate
+  }
+  return props.today || localDateStr(new Date())
+})
+
+// Keep currentDate clamped whenever periods are added or the date changes.
+// min = last period's start; max = props.today (real date).
+watch(
+  () => [test.value.periods.length, test.value.currentDate],
+  () => {
+    const realToday   = props.today || localDateStr(new Date())
+    const lastPeriod  = test.value.periods[test.value.periods.length - 1]
+    const minDate     = lastPeriod?.start ?? test.value.periodStart ?? ''
+    if (minDate && test.value.currentDate < minDate) test.value.currentDate = minDate
+    if (test.value.currentDate > realToday)          test.value.currentDate = realToday
+  },
+  { immediate: false }
+)
+
+// ── Date helpers ─────────────────────────────────────────────────────────────
+function dateAddDays (dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return localDateStr(d)
+}
+
+// Read Day = period.end − 4 days  =  bill_day − 5 days within the period's close month.
+// Returns status info used by the countdown strip and ALM-002.
+function readDayStatus (period) {
+  const readDay   = dateAddDays(period.end, -4)
+  const today     = effectiveToday.value
+  const todayDate = new Date(today + 'T00:00:00')
+  const rdDate    = new Date(readDay + 'T00:00:00')
+  const daysTo    = Math.floor((rdDate - todayDate) / 86_400_000)  // negative = overdue
+
+  // Find the last actual reading in this period (any meter, test or account mode)
+  let lastReadDate = null
+  for (const mKey of ['water', 'electricity']) {
+    const m = period[mKey]
+    if (!m) continue
+    const readings = m.readings ?? []
+    for (const r of readings) {
+      const d = r.date
+      if (d && (!lastReadDate || d > lastReadDate)) lastReadDate = d
+    }
+  }
+  // Fall back to opening date if no readings exist
+  if (!lastReadDate) {
+    const openDate = period.water?.openingDate ?? period.electricity?.openingDate ?? period.start
+    lastReadDate = openDate
+  }
+
+  const lastReadDt  = new Date(lastReadDate + 'T00:00:00')
+  const daysSinceLast = Math.floor((todayDate - lastReadDt) / 86_400_000)
+
+  // Countdown window: show strip from 5 days before read day until read day
+  const countdownStart = dateAddDays(readDay, -5)
+  const inWindow       = today >= countdownStart && today <= readDay
+
+  return { readDay, daysTo, lastReadDate, daysSinceLast, inWindow }
+}
 
 // Tariff meter flags
 const hasWater = computed(() => {
@@ -905,39 +1024,44 @@ function onPeriodHeaderClick (period, pi) {
   if (!wasExpanded && period.expanded) checkPeriodAlarms(period, pi)
 }
 
-// ALM-001: No Period Reading
-// Fires in account mode on the current (last) period when a meter has no
-// readings and the opening date is more than 5 days before today.
+// ALM-001 & ALM-002: Reading alarms
+// ALM-001 — No Period Reading: no readings at all since period start > 5 days ago.
+// ALM-002 — Reading Overdue: last reading (or period opening) was > 5 days ago.
+// Both fire only on the current (last) period.
 function checkPeriodAlarms (period, pi) {
-  if (mode.value !== 'account') return
-  if (pi !== activePeriods.value.length - 1) return   // only current period
+  if (pi !== activePeriods.value.length - 1) return   // only current (last) period
 
-  const today     = props.today ? new Date(props.today + 'T00:00:00') : new Date()
+  const today     = new Date(effectiveToday.value + 'T00:00:00')
   const threshold = 5
   const items     = []
 
-  if (period.water && period.water.readings.length === 0) {
-    const lastDate  = new Date((period.water.openingDate || period.start) + 'T00:00:00')
-    const daysSince = Math.floor((today - lastDate) / 86_400_000)
-    if (daysSince > threshold) {
-      items.push({
-        meter:    'water',
-        message:  'No readings exist for this period — please read your water meter.',
-        daysSince,
-        ref:      'ALM-001',
-      })
-    }
-  }
+  const periodStart          = new Date(period.start + 'T00:00:00')
+  const daysSincePeriodStart = Math.floor((today - periodStart) / 86_400_000)
 
-  if (period.electricity && period.electricity.readings.length === 0) {
-    const lastDate  = new Date((period.electricity.openingDate || period.start) + 'T00:00:00')
-    const daysSince = Math.floor((today - lastDate) / 86_400_000)
-    if (daysSince > threshold) {
+  // Only fire if the period has actually begun (start date is in the past)
+  if (daysSincePeriodStart <= 0) return
+
+  const { daysSinceLast } = readDayStatus(period)
+
+  for (const [mKey, label] of [['water', 'water'], ['electricity', 'electricity']]) {
+    const m = period[mKey]
+    if (!m) continue
+
+    if (m.readings.length === 0 && daysSincePeriodStart > threshold) {
+      // ALM-001: no readings at all since period started
       items.push({
-        meter:    'electricity',
-        message:  'No readings exist for this period — please read your electricity meter.',
-        daysSince,
-        ref:      'ALM-001',
+        meter:     mKey,
+        message:   `No readings exist for this period — please read your ${label} meter.`,
+        daysSince: daysSincePeriodStart,
+        ref:       'ALM-001',
+      })
+    } else if (m.readings.length > 0 && daysSinceLast > threshold) {
+      // ALM-002: readings exist but last one was > 5 days ago
+      items.push({
+        meter:     mKey,
+        message:   `Last ${label} reading was ${daysSinceLast} days ago — your next reading is overdue.`,
+        daysSince: daysSinceLast,
+        ref:       'ALM-002',
       })
     }
   }
@@ -951,7 +1075,7 @@ async function addPeriod () {
 
   // Auto-calculate the outgoing period before closing it
   const lastPi = periods.length - 1
-  if (canCalcPeriod(periods[lastPi]) && !periods[lastPi].bill) {
+  if (canCalcPeriod(periods[lastPi], lastPi) && !periods[lastPi].bill) {
     await calcPeriod(lastPi)
     periods[lastPi].showBill = true
   }
@@ -1251,7 +1375,7 @@ function formatElecAdj (period) {
 }
 
 // ── Calculate period bill (test + account unified) ────────────────────────────
-function calcBlockReason (period) {
+function calcBlockReason (period, pi) {
   const tariffId = mode.value === 'test'
     ? test.value.templateId
     : ua.value.accountData?.tariff?.id
@@ -1261,11 +1385,20 @@ function calcBlockReason (period) {
       : 'This account has no tariff template assigned'
   }
   if (!period.water && !period.electricity) return 'No meters on this period'
+  const allInsufficient = [period.water, period.electricity]
+    .filter(Boolean)
+    .every(m => m.insufficientData)
+  if (allInsufficient) return 'Insufficient readings — two readings minimum required'
+  // Sequential Gate (PD Section 1.0): previous period must have a bill first
+  if (pi > 0) {
+    const prev = activePeriods.value[pi - 1]
+    if (prev && !prev.bill) return `Period ${pi} must be calculated before this period`
+  }
   return ''
 }
 
-function canCalcPeriod (period) {
-  return calcBlockReason(period) === ''
+function canCalcPeriod (period, pi) {
+  return calcBlockReason(period, pi) === ''
 }
 
 async function calcPeriod (pi) {
@@ -1299,11 +1432,12 @@ async function computePeriodBill (period, tariffId, accountId = null) {
       const w     = period.water
       const openV = w.openingLitres ?? 0
 
-      // Actual consumption to date (last reading - opening)
-      const lastReading = mode.value === 'test'
-        ? w.readings.filter(r => r.litres > 0).sort((a, b) => a.date.localeCompare(b.date)).pop()
-        : w.readings.filter(r => r.value > 0).sort((a, b) => a.date.localeCompare(b.date)).pop()
-      const lastValue       = mode.value === 'test' ? (lastReading?.litres ?? openV) : (lastReading?.value ?? openV)
+      // Actual consumption to date (last reading - opening).
+      // Readings use r.litres in test mode and r.value in account mode — read whichever is present.
+      const lastReading     = w.readings
+        .filter(r => (r.litres ?? r.value ?? 0) > 0)
+        .sort((a, b) => a.date.localeCompare(b.date)).pop()
+      const lastValue       = lastReading ? (lastReading.litres ?? lastReading.value ?? openV) : openV
       const currConsumption = Math.max(0, Math.round(lastValue - openV))
 
       // Bill consumption: best available closing (calculated → provisional → last reading)
@@ -1363,10 +1497,11 @@ async function computePeriodBill (period, tariffId, accountId = null) {
       const e     = period.electricity
       const openV = e.openingKwh ?? 0
 
-      const lastReadingE = mode.value === 'test'
-        ? e.readings.filter(r => r.kwhInt > 0).sort((a, b) => a.date.localeCompare(b.date)).pop()
-        : e.readings.filter(r => r.value > 0).sort((a, b) => a.date.localeCompare(b.date)).pop()
-      const lastValueE    = mode.value === 'test' ? (lastReadingE?.kwhInt ?? openV) : (lastReadingE?.value ?? openV)
+      // Same normalization as water: read r.kwhInt (test) or r.value (account) whichever is present.
+      const lastReadingE  = e.readings
+        .filter(r => (r.kwhInt ?? r.value ?? 0) > 0)
+        .sort((a, b) => a.date.localeCompare(b.date)).pop()
+      const lastValueE    = lastReadingE ? (lastReadingE.kwhInt ?? lastReadingE.value ?? openV) : openV
       const currConsE     = Math.max(0, Math.round(lastValueE - openV))
 
       const billClosingE  = e.calculatedClosingKwh ?? e.provisionalClosingKwh ?? lastValueE
@@ -1477,6 +1612,7 @@ function reconstructPeriods (data) {
   const billDay = account.bill_day || 1
   const today   = props.today || localDateStr(new Date())
 
+  // Find the earliest initialization reading across all meters
   let earliest = null
   for (const m of meters) {
     if (m.readings.length > 0) {
@@ -1488,6 +1624,17 @@ function reconstructPeriods (data) {
   const firstStart = uaPeriodStart(earliest, billDay)
   const periods    = []
   let   curStart   = firstStart
+
+  // Per-meter chained state: opening value/date/dailyUsage carries forward from
+  // each period's close into the next period's open. This mirrors exactly how
+  // test mode chains periods — no DB lookup for openings after Period 1.
+  const meterState = {}
+  for (const m of meters) {
+    const initReading = m.readings.filter(r => r.date <= firstStart).slice(-1)[0] ?? null
+    meterState[m.id] = initReading
+      ? { value: initReading.value, date: initReading.date, dailyUsage: null }
+      : null
+  }
 
   while (curStart <= today) {
     const end       = uaPeriodEnd(curStart, billDay)
@@ -1502,69 +1649,93 @@ function reconstructPeriods (data) {
     }
 
     for (const m of meters) {
-      const onOrBefore     = m.readings.filter(r => r.date <= curStart)
-      const openingReading = onOrBefore.length ? onOrBefore[onOrBefore.length - 1] : null
-      if (!openingReading) continue
+      const opening = meterState[m.id]
+      if (!opening) continue
 
-      const periodReadings = m.readings.filter(r => r.date > openingReading.date && r.date <= end && r.date >= curStart)
-      const nextReadings   = m.readings.filter(r => r.date >= nextStart)
-      const nextOpening    = nextReadings.length ? nextReadings[0] : null
+      // Intra-period readings: date falls within [curStart, end].
+      // For the very first period, exclude the initialization reading itself
+      // (it is the opening anchor, not a consumption event).
+      const isFirstPeriod = curStart === firstStart
+      const periodReadings = m.readings.filter(r => {
+        if (isFirstPeriod && r.date <= opening.date) return false
+        return r.date >= curStart && r.date <= end
+      })
 
-      let sectors = []; let provisionalClosing = null; let calculatedClosing = null; let dailyUsage = null
+      let sectors          = []
+      let provisionalClosing = null
+      let calculatedClosing  = null
+      let dailyUsage         = opening.dailyUsage   // inherit momentum from previous period
+      let insufficientData   = false
 
       if (periodReadings.length > 0) {
+        // Build sectors using the chained opening as the anchor point.
+        // Opening date may predate curStart when a prior period had no readings —
+        // the sector will correctly span across that gap.
         const sectorInput = [
-          { reading_date: openingReading.date, reading_value: openingReading.value },
+          { reading_date: opening.date, reading_value: opening.value },
           ...periodReadings.map(r => ({ reading_date: r.date, reading_value: r.value })),
         ]
         sectors = buildSectors(sectorInput)
         const last     = periodReadings[periodReadings.length - 1]
-        const usage    = last.value - openingReading.value
-        const daysSpan = blockDays(openingReading.date, last.date)
+        const usage    = last.value - opening.value
+        const daysSpan = blockDays(opening.date, last.date)
         if (daysSpan > 0 && usage >= 0) {
-          dailyUsage = Math.round(usage / daysSpan)
-          provisionalClosing = Math.round(openingReading.value + dailyUsage * period.blockDays)
-          if (last.date === end) { calculatedClosing = last.value; provisionalClosing = last.value }
+          dailyUsage         = Math.round(usage / daysSpan)
+          provisionalClosing = Math.round(opening.value + dailyUsage * period.blockDays)
+          if (last.date === end) {
+            calculatedClosing  = last.value
+            provisionalClosing = last.value
+          }
         }
+      } else if (dailyUsage != null && dailyUsage > 0) {
+        // No readings this period — project forward using inherited momentum
+        provisionalClosing = Math.round(opening.value + dailyUsage * period.blockDays)
+      } else {
+        // No readings and no momentum: calculation is impossible.
+        // Requires at least two readings to establish a consumption rate.
+        insufficientData = true
       }
 
-      if (nextOpening && nextOpening.date === nextStart && end < today) {
-        calculatedClosing = nextOpening.value
-        const totalUsage  = nextOpening.value - openingReading.value
-        dailyUsage        = Math.round(totalUsage / period.blockDays)
-        if (!provisionalClosing) provisionalClosing = calculatedClosing
-        if (periodReadings.length === 0) {
-          sectors = [{ start: nextDay(openingReading.date), end, total_usage: totalUsage, block_days: period.blockDays, daily_avg: dailyUsage }]
-        }
+      // Advance the chained state for the next period.
+      // Only advance the anchor DATE when a closing was computed — if no close
+      // exists (insufficientData), preserve the original opening date so the next
+      // period that receives a reading measures the correct span from the real anchor.
+      meterState[m.id] = {
+        value:      provisionalClosing ?? opening.value,
+        date:       provisionalClosing != null ? end : opening.date,
+        dailyUsage,
       }
 
       if (m.meter_type === 'water') {
         period.water = {
-          openingLitres:            openingReading.value,
-          openingDate:              openingReading.date,
-          readings:                 periodReadings,
+          openingLitres:               opening.value,
+          openingDate:                 opening.date,
+          readings:                    periodReadings,
           sectors,
-          provisionalClosingLitres: provisionalClosing,
-          calculatedClosingLitres:  calculatedClosing,
-          provisionalClosingSnapshot: null,
-          provisionalBillR:         null,
-          calculatedBillR:          null,
-          adjustmentBroughtForward: 0,
-          inheritedDailyUsage:      null,
+          provisionalClosingLitres:    provisionalClosing,
+          calculatedClosingLitres:     calculatedClosing,
+          provisionalClosingSnapshot:  null,
+          provisionalBillR:            null,
+          calculatedBillR:             null,
+          adjustmentBroughtForward:    0,
+          adjustmentDetail:            null,
+          inheritedDailyUsage:         null,
           dailyUsage,
-          stats:                    null,
+          insufficientData,
+          stats:                       null,
         }
       } else if (m.meter_type === 'electricity') {
         period.electricity = {
-          openingKwh:            openingReading.value,
-          openingDate:           openingReading.date,
-          readings:              periodReadings,
+          openingKwh:              opening.value,
+          openingDate:             opening.date,
+          readings:                periodReadings,
           sectors,
-          provisionalClosingKwh: provisionalClosing,
-          calculatedClosingKwh:  calculatedClosing,
+          provisionalClosingKwh:   provisionalClosing,
+          calculatedClosingKwh:    calculatedClosing,
           dailyUsage,
+          insufficientData,
           adjustmentBroughtForward: 0,
-          stats:                 null,
+          stats:                   null,
         }
       }
     }
@@ -1806,6 +1977,28 @@ recomputeTestPeriod()
 .r-kl-display   { font-family: 'Courier New', monospace; font-size: 0.88rem; font-weight: 700; color: #3294B8; }
 .btn-rm { background: none; border: none; color: #e53e3e; font-size: 0.88rem; cursor: pointer; padding: 0.1rem 0.3rem; }
 .empty-readings { font-size: 0.82rem; color: #a0aec0; font-style: italic; padding: 0.25rem 0; }
+.insufficient-data-notice { display: flex; align-items: flex-start; gap: 0.6rem; background: #fffbeb; border: 1px solid #f6d860; border-radius: 8px; padding: 0.75rem 1rem; margin: 0.75rem 0; color: #92400e; font-size: 0.88rem; font-weight: 500; }
+.insufficient-data-notice .fas { color: #d97706; margin-top: 0.1rem; flex-shrink: 0; }
+
+/* Current Date override row (test setup) */
+.current-date-row { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; flex-wrap: wrap; }
+.current-date-label { font-size: 0.82rem; font-weight: 600; color: #4a5568; white-space: nowrap; }
+.current-date-input { width: 160px !important; }
+.btn-date-toggle { display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 1rem; border: none; border-radius: 20px; font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+.btn-date-toggle--off { background: #e2e8f0; color: #718096; }
+.btn-date-toggle--on  { background: #3294B8; color: #fff; }
+.current-date-hint { font-size: 0.8rem; color: #2d6b8a; }
+
+/* Read Day countdown strip */
+.read-day-strip { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 1rem; border-radius: 8px; font-size: 0.85rem; font-weight: 500; margin: 0.5rem 0; }
+.read-day-strip .fas { flex-shrink: 0; font-size: 1rem; }
+.rds-date { font-weight: 400; opacity: 0.75; margin-left: 0.3rem; }
+.read-day-strip--soon    { background: #fffbeb; border: 1px solid #f6d860; color: #92400e; }
+.read-day-strip--soon .fas { color: #d97706; }
+.read-day-strip--today   { background: #fff5f5; border: 1px solid #fc8181; color: #742a2a; }
+.read-day-strip--today .fas { color: #e53e3e; }
+.read-day-strip--overdue { background: #fff5f5; border: 1px solid #fc8181; color: #742a2a; }
+.read-day-strip--overdue .fas { color: #e53e3e; }
 .reading-row--error { background: #fff5f5; border-radius: 6px; padding-left: 0.4rem; margin-left: -0.4rem; }
 .r-seq-error { font-size: 0.74rem; color: #c53030; display: flex; align-items: center; gap: 0.3rem; white-space: nowrap; font-weight: 600; }
 

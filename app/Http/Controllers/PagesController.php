@@ -7,6 +7,7 @@ use App\Models\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
 
 class PagesController extends Controller
 {
@@ -15,30 +16,20 @@ class PagesController extends Controller
      */
     public function index()
     {
-        $settings = Settings::first();
-        $demoMode = $settings->demo_mode ?? true;
+        $pages = Page::orderBy('sort_order')->orderBy('title')
+            ->get(['id', 'parent_id', 'title', 'slug', 'page_type', 'is_active', 'sort_order', 'icon'])
+            ->map(fn ($p) => [
+                'id'        => $p->id,
+                'title'     => $p->title,
+                'slug'      => $p->slug,
+                'page_type' => $p->page_type,
+                'is_active' => (bool) $p->is_active,
+                'sort_order'=> $p->sort_order,
+                'icon'      => $p->icon,
+                'parent_id' => $p->parent_id,
+            ])->values()->all();
 
-        // Get root pages with their children
-        if ($demoMode) {
-            // Demo mode: show all pages including demo content
-            $pages = Page::root()
-                ->with(['children' => function($q) {
-                    $q->orderBy('sort_order');
-                }])
-                ->orderBy('sort_order')
-                ->get();
-        } else {
-            // Production mode: hide demo pages
-            $pages = Page::root()
-                ->where('is_demo', false)
-                ->with(['children' => function($q) {
-                    $q->where('is_demo', false)->orderBy('sort_order');
-                }])
-                ->orderBy('sort_order')
-                ->get();
-        }
-
-        return view('admin.pages.index', compact('pages'));
+        return Inertia::render('Admin/Pages', ['pages' => $pages]);
     }
 
     /**
@@ -46,10 +37,15 @@ class PagesController extends Controller
      */
     public function create()
     {
-        // Get parent pages for dropdown (only 'parent' type pages)
-        $parentPages = Page::root()->parentType()->orderBy('title')->get();
-        
-        return view('admin.pages.create', compact('parentPages'));
+        $parentPages = Page::root()->parentType()->orderBy('title')
+            ->get(['id', 'title']);
+
+        return Inertia::render('Admin/PageCreate', [
+            'parentPages'    => $parentPages,
+            'imageUploadUrl' => route('editor.image.upload'),
+            'imageByUrlUrl'  => route('editor.image.by-url'),
+            'csrfToken'      => csrf_token(),
+        ]);
     }
 
     /**
@@ -98,14 +94,27 @@ class PagesController extends Controller
      */
     public function edit($id)
     {
-        $page = Page::findOrFail($id);
+        $page = Page::with(['children' => function ($q) {
+            $q->select('id', 'parent_id', 'title', 'icon', 'sort_order')->orderBy('sort_order');
+        }, 'parent:id,title'])->findOrFail($id);
+
         $parentPages = Page::root()
             ->parentType()
             ->where('id', '!=', $id)
             ->orderBy('title')
-            ->get();
-        
-        return view('admin.pages.edit', compact('page', 'parentPages'));
+            ->get(['id', 'title']);
+
+        return Inertia::render('Admin/PageEdit', [
+            'page'           => array_merge($page->toArray(), [
+                'url'           => $page->url,
+                'parent_title'  => $page->parent?->title,
+                'children_count'=> $page->children->count(),
+            ]),
+            'parentPages'    => $parentPages,
+            'imageUploadUrl' => route('editor.image.upload'),
+            'imageByUrlUrl'  => route('editor.image.by-url'),
+            'csrfToken'      => csrf_token(),
+        ]);
     }
 
     /**

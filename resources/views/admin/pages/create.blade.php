@@ -51,10 +51,19 @@
 
                         <div class="form-group">
                             <label for="page_content"><strong>Page Content</strong></label>
-                            <textarea class="form-control" 
-                                      id="page_content" 
-                                      name="page_content" 
-                                      rows="15"></textarea>
+
+                            {{-- Editor.js usage guide --}}
+                            <div class="editorjs-guide alert alert-info py-2 px-3 mb-2 small">
+                                <strong><i class="fas fa-keyboard mr-1"></i>Block Editor</strong> —
+                                Click inside the editor below, then:
+                                <span class="badge badge-light border mx-1"><kbd>/</kbd></span> to choose a block type &nbsp;|&nbsp;
+                                <span class="badge badge-light border mx-1"><kbd>Enter</kbd></span> for a new paragraph &nbsp;|&nbsp;
+                                <span class="badge badge-light border mx-1">+ button</span> on the left margin to add any block
+                            </div>
+
+                            <textarea id="page_content" name="page_content" style="display:none;"></textarea>
+                            <div id="editorjs" style="border:1px solid #4e73df;border-radius:0.35rem;min-height:400px;background:#fff;padding:8px 0;cursor:text;" onclick="this.querySelector('.ce-block__content, [contenteditable]') && this.querySelector('.ce-block__content, [contenteditable]').focus()"></div>
+                            <div id="editorjs-status" class="text-muted small mt-1"><i class="fas fa-spinner fa-spin mr-1"></i>Loading editor...</div>
                         </div>
 
                         <hr>
@@ -177,31 +186,77 @@
 </div>
 @endsection
 
+@section('page-level-styles')
+<style>
+    .ce-toolbar__actions { opacity: 1 !important; }
+    .ce-block__content, .ce-toolbar__content { max-width: 100% !important; }
+    .codex-editor { font-family: inherit; }
+</style>
+@endsection
+
 @section('script')
-<script src="https://cdn.ckeditor.com/4.22.1/full/ckeditor.js"></script>
+<!-- Editor.js core + tools -->
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/editorjs@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/header@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/list@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/quote@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/delimiter@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/image@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/underline@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/marker@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/inline-code@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/table@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/editorjs-undo@latest"></script>
 <script>
-    CKEDITOR.replace('page_content', {
-        height: 400,
-        removeButtons: '',
-        toolbarGroups: [
-            { name: 'document', groups: [ 'mode', 'document', 'doctools' ] },
-            { name: 'clipboard', groups: [ 'clipboard', 'undo' ] },
-            { name: 'editing', groups: [ 'find', 'selection', 'spellchecker', 'editing' ] },
-            { name: 'forms', groups: [ 'forms' ] },
-            '/',
-            { name: 'basicstyles', groups: [ 'basicstyles', 'cleanup' ] },
-            { name: 'paragraph', groups: [ 'list', 'indent', 'blocks', 'align', 'bidi', 'paragraph' ] },
-            { name: 'links', groups: [ 'links' ] },
-            { name: 'insert', groups: [ 'insert' ] },
-            '/',
-            { name: 'styles', groups: [ 'styles' ] },
-            { name: 'colors', groups: [ 'colors' ] },
-            { name: 'tools', groups: [ 'tools' ] },
-            { name: 'others', groups: [ 'others' ] },
-            { name: 'about', groups: [ 'about' ] }
-        ]
+    const textarea    = document.getElementById('page_content');
+    const csrfToken   = document.querySelector('meta[name="csrf-token"]').content;
+
+    const editor = new EditorJS({
+        holder: 'editorjs',
+        autofocus: true,
+        tools: {
+            header:    { class: Header,    inlineToolbar: true, config: { levels: [1,2,3,4], defaultLevel: 2 } },
+            list:      { class: List,      inlineToolbar: true },
+            quote:     { class: Quote,     inlineToolbar: true },
+            delimiter: Delimiter,
+            image: {
+                class: ImageTool,
+                config: {
+                    endpoints: {
+                        byFile: '{{ route("editor.image.upload") }}',
+                        byUrl:  '{{ route("editor.image.by-url") }}',
+                    },
+                    additionalRequestHeaders: { 'X-CSRF-TOKEN': csrfToken },
+                    captionPlaceholder: 'Image caption (optional)',
+                },
+            },
+            underline:  Underline,
+            marker:     Marker,
+            inlineCode: InlineCode,
+            table:      { class: Table, inlineToolbar: true },
+        },
+        data: { blocks: [] },
+        placeholder: 'Click here or press / to choose a block type...',
+        onChange: async () => {
+            const saved = await editor.save();
+            textarea.value = JSON.stringify(saved);
+        },
+        onReady: () => {
+            document.getElementById('editorjs-status').textContent = '✓ Editor ready — click inside to begin';
+            document.getElementById('editorjs-status').className = 'text-success small mt-1';
+            try { new Undo({ editor }); } catch(e) {}
+        },
     });
 
+    // Safety-net sync on submit
+    document.getElementById('pageForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const saved = await editor.save();
+        textarea.value = JSON.stringify(saved);
+        e.target.submit();
+    });
+
+    // Auto-generate slug from title
     $('#title').on('blur', function() {
         if ($('#slug').val() === '') {
             var slug = $(this).val()
@@ -212,6 +267,7 @@
         }
     });
 
+    // Page type toggle
     $('input[name="page_type"]').on('change', function() {
         if ($(this).val() === 'single') {
             $('#parentSelectGroup').slideDown();
@@ -220,7 +276,6 @@
             $('#parent_id').val('');
         }
     });
-    
     $('input[name="page_type"]:checked').trigger('change');
 </script>
 @endsection

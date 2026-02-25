@@ -52,6 +52,7 @@ RUN set +e; \
 
 # Prepare writable directories and set permissions
 RUN mkdir -p storage/app/public \
+    storage/app/public/editor-images \
     storage/framework/cache/data \
     storage/framework/sessions \
     storage/framework/views \
@@ -59,6 +60,9 @@ RUN mkdir -p storage/app/public \
     bootstrap/cache \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 storage bootstrap/cache
+
+# Generate PWA icons into public/icons/ using PHP GD
+RUN mkdir -p public/icons && php scripts/generate-pwa-icons.php
 
 # Backup public directory (will be copied to volume on startup)
 RUN cp -r public /tmp/public-backup || true
@@ -106,6 +110,7 @@ done;\
 echo "MySQL is ready!";\
 if grep -q "^APP_KEY=$" /var/www/html/.env 2>/dev/null; then php artisan key:generate --force 2>/dev/null || true; fi;\
 echo "Skipping auto-migrations - run manually after container starts";\
+php artisan storage:link --force 2>/dev/null || true;\
 php artisan config:clear 2>/dev/null || true;\
 echo "=== Laravel container ready ===";\
 exec "$@"\n' > /usr/local/bin/docker-entrypoint.sh \

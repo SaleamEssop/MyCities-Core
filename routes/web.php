@@ -53,10 +53,11 @@ Route::get('/app', function () {
 // ============================================================
 
 // Public user routes (no auth required)
-Route::get('/user', fn () => redirect()->route('user.splash'));
+Route::get('/user', fn () => redirect()->route('user.info'));
 Route::get('/user/splash',  [UserAppController::class, 'splash'])->name('user.splash');
 Route::get('/user/login',   [UserAuthController::class, 'showLogin'])->name('user.login');
 Route::post('/user/login',  [UserAuthController::class, 'login'])->name('user.login.submit');
+Route::get('/user/info',    [UserAppController::class, 'infoPages'])->name('user.info');
 
 // Authenticated user routes
 Route::middleware('auth')->prefix('user')->name('user.')->group(function () {
@@ -184,6 +185,13 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
 
     // Simplified route - takes userId and finds first account automatically
     Route::get('user-webapp/{userId}', [UserAccountManagerController::class, 'showUserWebApp'])->name('user-webapp');
+
+    // App View - webapp work screen
+    Route::get('app-view', [\App\Http\Controllers\Admin\AppPreviewController::class, 'index'])->name('app-view');
+    // Switch session to a user account so admin can view the app as that user
+    Route::get('app-view/switch-user/{userId}', [\App\Http\Controllers\Admin\AppPreviewController::class, 'switchUser'])->name('app-view.switch-user');
+    // Restore admin session
+    Route::get('app-view/restore-admin', [\App\Http\Controllers\Admin\AppPreviewController::class, 'restoreAdmin'])->name('app-view.restore-admin');
 
     // --- MONITORING (Boundary-Level Observability) ---
     Route::prefix('monitoring')->group(function () {
@@ -420,11 +428,15 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::post('ads-category/edit', [AdsController::class, 'updateCategory'])->name('edit-ads-category');
     Route::get('ads-category/delete/{id}', [AdsController::class, 'destroyCategory'])->name('delete-ads-category');
 
-    // --- CKEDITOR IMAGE UPLOAD ---
+    // --- CKEDITOR IMAGE UPLOAD (legacy) ---
     Route::post('ckeditor/upload', [AdsController::class, 'uploadImage'])->name('ckeditor.image-upload');
 
+    // --- EDITOR.JS IMAGE UPLOAD ---
+    Route::post('editor/image-upload',    [\App\Http\Controllers\EditorImageController::class, 'upload'])->name('editor.image.upload');
+    Route::post('editor/image-by-url',    [\App\Http\Controllers\EditorImageController::class, 'uploadByUrl'])->name('editor.image.by-url');
+
     // --- PAGE MANAGEMENT ---
-    Route::get('pages', fn () => Inertia::render('Admin/Pages'))->name('pages-list');
+    Route::get('pages', [PagesController::class, 'index'])->name('pages-list');
     Route::get('pages/create', [PagesController::class, 'create'])->name('pages-create');
     Route::post('pages/store', [PagesController::class, 'store'])->name('pages-store');
     Route::get('pages/edit/{id}', [PagesController::class, 'edit'])->name('pages-edit');

@@ -114,7 +114,7 @@
                       <button @click="startEdit(u)" class="us-icon-btn us-icon-btn--blue" title="Edit">
                         <i class="fas fa-pencil-alt"></i>
                       </button>
-                      <button @click="resetPassword(u)" class="us-icon-btn us-icon-btn--amber" title="Reset Password">
+                      <button @click="startReset(u)" class="us-icon-btn us-icon-btn--amber" title="Reset Password">
                         <i class="fas fa-key"></i>
                       </button>
                       <button @click="toggleStatus(u)" class="us-icon-btn"
@@ -345,11 +345,51 @@
     </div>
     <!-- /TAB TEST -->
 
+    <!-- ── Password Reset Modal ──────────────────────────────────────── -->
+    <teleport to="body">
+      <div v-if="pwdReset.show" class="us-modal-backdrop" @click.self="cancelReset">
+        <div class="us-modal">
+          <div class="us-modal-header">
+            <i class="fas fa-key mr-2"></i>Reset Password — {{ pwdReset.userName }}
+            <button class="us-modal-close" @click="cancelReset">&times;</button>
+          </div>
+          <div class="us-modal-body">
+            <div class="us-radio-group">
+              <label class="us-radio-label">
+                <input type="radio" v-model="pwdReset.mode" value="auto">
+                <span>Auto-generate a random password</span>
+              </label>
+              <label class="us-radio-label mt-2">
+                <input type="radio" v-model="pwdReset.mode" value="manual">
+                <span>Set my own password</span>
+              </label>
+            </div>
+            <div v-if="pwdReset.mode === 'manual'" class="mt-3">
+              <label class="us-label">New password <span class="req">*</span></label>
+              <input
+                v-model="pwdReset.newPwd"
+                type="text"
+                class="us-input"
+                placeholder="Min 6 characters"
+                autocomplete="new-password"
+              >
+            </div>
+          </div>
+          <div class="us-modal-footer">
+            <button class="us-btn us-btn-secondary" @click="cancelReset">Cancel</button>
+            <button class="us-btn us-btn-primary" @click="confirmReset" :disabled="pwdReset.busy">
+              <i class="fas fa-check mr-1"></i>{{ pwdReset.busy ? 'Resetting…' : 'Reset Password' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
   </AdminLayout>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, reactive } from 'vue'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
 const props = defineProps({
@@ -455,17 +495,36 @@ async function saveEdit(u) {
 }
 
 // ── Reset Password ────────────────────────────────────────────────────────────
-async function resetPassword(u) {
-  if (!confirm(`Reset password for ${u.name}?`)) return
+const pwdReset = reactive({ show: false, userId: null, userName: '', mode: 'auto', newPwd: '', busy: false })
+
+function startReset(u) {
+  pwdReset.userId   = u.id
+  pwdReset.userName = u.name
+  pwdReset.mode     = 'auto'
+  pwdReset.newPwd   = ''
+  pwdReset.show     = true
+}
+function cancelReset() { pwdReset.show = false }
+
+async function confirmReset() {
+  if (pwdReset.mode === 'manual' && pwdReset.newPwd.length < 6) {
+    showFlash('Password must be at least 6 characters.', false); return
+  }
+  pwdReset.busy = true
   try {
-    const res = await window.axios.post(route('user.reset-password'), { user_id: u.id })
+    const payload = { user_id: pwdReset.userId }
+    if (pwdReset.mode === 'manual') payload.password = pwdReset.newPwd
+    const res = await window.axios.post(route('user.reset-password'), payload)
     if (res.data.success) {
-      showFlash(`Password reset for <strong>${u.name}</strong>. New password: <strong>${res.data.new_password}</strong>`, true)
+      showFlash(`Password reset for <strong>${pwdReset.userName}</strong>. New password: <strong>${res.data.new_password}</strong>`, true)
+      pwdReset.show = false
     } else {
       showFlash(res.data.message, false)
     }
   } catch (e) {
     showFlash(e.response?.data?.message || e.message, false)
+  } finally {
+    pwdReset.busy = false
   }
 }
 
@@ -837,4 +896,36 @@ async function runCreateTestUser() {
 /* ── Badge ───────────────────────────────────────────────────────────────────── */
 .us-badge { border-radius: 99px; padding: 0.1rem 0.55rem; font-size: 0.72rem; font-weight: 700; }
 .us-badge--green { background: #d4f4e2; color: #1a7a4a; }
+
+/* ── Password Reset Modal ──────────────────────────────────────────────────── */
+.us-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 9999;
+}
+.us-modal {
+  background: #fff; border-radius: 8px; width: 100%; max-width: 440px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18); overflow: hidden;
+}
+.us-modal-header {
+  background: #f8f9fc; padding: 14px 18px; font-weight: 700; font-size: 0.95rem;
+  border-bottom: 1px solid #e3e6f0; display: flex; align-items: center;
+}
+.us-modal-close {
+  margin-left: auto; background: none; border: none; font-size: 1.3rem;
+  cursor: pointer; color: #888; line-height: 1;
+}
+.us-modal-body  { padding: 20px 18px; }
+.us-modal-footer {
+  padding: 12px 18px; border-top: 1px solid #e3e6f0;
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+.us-radio-group { display: flex; flex-direction: column; }
+.us-radio-label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9rem; }
+.us-radio-label input[type="radio"] { accent-color: #009BA4; width: 16px; height: 16px; }
+.us-btn-secondary { background: #fff; border: 1.5px solid #d1d3e2; color: #555; }
+.us-btn-secondary:hover { background: #f8f9fc; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-3 { margin-top: 1rem; }
+.mr-1 { margin-right: 0.25rem; }
+.mr-2 { margin-right: 0.5rem; }
 </style>

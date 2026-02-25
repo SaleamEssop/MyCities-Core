@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
+use App\Models\Page;
+use BumpCore\EditorPhp\EditorPhp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -420,9 +422,56 @@ class UserAppController extends Controller
         return response()->json($accounts);
     }
 
+    // ------------------------------------------------------------------
+    // INFO PAGES — publicly accessible page content from editor
+    // ------------------------------------------------------------------
+    public function infoPages()
+    {
+        $rootPages = Page::where('is_active', true)
+            ->whereNull('parent_id')
+            ->orderBy('sort_order')
+            ->with(['activeChildren' => function ($q) {
+                $q->orderBy('sort_order');
+            }])
+            ->get();
+
+        $pages = $rootPages->map(function ($page) {
+            $children = $page->activeChildren->map(fn ($child) => [
+                'id'           => $child->id,
+                'title'        => $child->title,
+                'icon'         => $child->icon,
+                'html_content' => $this->renderPageContent($child->content),
+            ])->values()->all();
+
+            return [
+                'id'           => $page->id,
+                'title'        => $page->title,
+                'icon'         => $page->icon,
+                'html_content' => $this->renderPageContent($page->content),
+                'children'     => $children,
+            ];
+        })->values()->all();
+
+        return Inertia::render('UserApp/Info', [
+            'pages'          => $pages,
+            'activePageId'   => request()->query('tab')   ? (int) request()->query('tab')   : null,
+            'activeChildId'  => request()->query('child') ? (int) request()->query('child') : null,
+        ]);
+    }
+
     // ====================================================================
     // PRIVATE HELPERS
     // ====================================================================
+
+    private function renderPageContent(?string $content): string
+    {
+        if (!$content) return '';
+        try {
+            return EditorPhp::make($content)->render();
+        } catch (\Throwable $e) {
+            return $content;
+        }
+    }
 
     private function getCurrentAccount($user, Request $request)
     {

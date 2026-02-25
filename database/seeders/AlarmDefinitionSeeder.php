@@ -20,6 +20,16 @@ class AlarmDefinitionSeeder extends Seeder
                 'severity'         => 'warning',
                 'is_active'        => true,
             ],
+            [
+                'code'             => 'ALM-002',
+                'name'             => 'Reading Overdue',
+                'description'      => 'A reading exists in the current period but the last reading was more than 5 days ago. Read Day is bill day minus 5 days; countdown begins 5 days before Read Day.',
+                'condition_type'   => 'reading_overdue',
+                'condition_params' => ['days_threshold' => 5, 'read_day_offset' => -5],
+                'delivery_method'  => 'modal',
+                'severity'         => 'warning',
+                'is_active'        => true,
+            ],
         ];
 
         foreach ($alarms as $alarm) {

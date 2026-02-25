@@ -254,7 +254,10 @@
 
         <div class="page-content">
             @if($page->content)
-                {!! $page->content !!}
+                @php
+                    use BumpCore\EditorPhp\EditorPhp;
+                    echo EditorPhp::make($page->content)->render();
+                @endphp
             @else
                 <div class="empty-content">
                     <i class="fas fa-file-alt"></i>

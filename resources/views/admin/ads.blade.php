@@ -120,7 +120,8 @@
                         </div>
                         <div class="form-group">
                             <label><strong>Description :</strong></label>
-                            <textarea class="form-control" name="description-editor"></textarea>
+                            <textarea id="ads-create-description" name="description-editor" style="display:none;"></textarea>
+                            <div id="ads-create-editorjs" style="border:1px solid #d1d3e2;border-radius:0.35rem;min-height:200px;background:#fff;padding:4px 0;"></div>
                         </div>
                         @csrf
                     </div>
@@ -134,18 +135,77 @@
     </div>
 @endsection
 
-@section('page-level-scripts')
-    <script src="//cdn.ckeditor.com/4.14.1/standard/ckeditor.js"></script>
-    <script src="//cdn.ckeditor.com/4.14.1/standard/adapters/jquery.js"></script>
+@section('page-level-styles')
+<style>
+    #ads-create-editorjs { border:1px solid #d1d3e2; border-radius:0.35rem; min-height:200px; background:#fff; padding:4px 0; }
+    .ce-block__content, .ce-toolbar__content { max-width: 100% !important; }
+    .codex-editor { font-family: inherit; }
+</style>
+@endsection
 
-    <script type="text/javascript">
+@section('page-level-scripts')
+    <!-- Editor.js core + tools -->
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/editorjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/header@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/list@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/quote@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/delimiter@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/image@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/underline@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/marker@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/inline-code@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/editorjs-undo@latest"></script>
+
+    <script>
         $(document).ready(function() {
             $('#acc-dataTable').dataTable();
+        });
 
-            CKEDITOR.replace('description-editor', {
-                filebrowserUploadUrl: "{{route('ckeditor.image-upload', ['_token' => csrf_token() ])}}",
-                filebrowserUploadMethod: 'form'
+        const adsCsrf = document.querySelector('meta[name="csrf-token"]').content;
+        let adsCreateEditor = null;
+
+        // Initialise Editor.js only when the modal is fully visible
+        $('#catModal').on('shown.bs.modal', function() {
+            if (adsCreateEditor) return; // already initialised
+
+            adsCreateEditor = new EditorJS({
+                holder: 'ads-create-editorjs',
+                tools: {
+                    header:    { class: Header,    inlineToolbar: true, config: { levels: [1,2,3,4], defaultLevel: 2 } },
+                    list:      { class: List,      inlineToolbar: true },
+                    quote:     { class: Quote,     inlineToolbar: true },
+                    delimiter: Delimiter,
+                    image: {
+                        class: ImageTool,
+                        config: {
+                            endpoints: {
+                                byFile: '{{ route("editor.image.upload") }}',
+                                byUrl:  '{{ route("editor.image.by-url") }}',
+                            },
+                            additionalRequestHeaders: { 'X-CSRF-TOKEN': adsCsrf },
+                            captionPlaceholder: 'Image caption (optional)',
+                        },
+                    },
+                    underline:  Underline,
+                    marker:     Marker,
+                    inlineCode: InlineCode,
+                },
+                data: { blocks: [] },
+                placeholder: 'Write your ad description...',
+                onChange: async () => {
+                    const saved = await adsCreateEditor.save();
+                    document.getElementById('ads-create-description').value = JSON.stringify(saved);
+                },
             });
+        });
+
+        // Safety-net sync before the modal form submits
+        $('#catModal form').on('submit', async function(e) {
+            if (!adsCreateEditor) return;
+            e.preventDefault();
+            const saved = await adsCreateEditor.save();
+            document.getElementById('ads-create-description').value = JSON.stringify(saved);
+            this.submit();
         });
     </script>
 @endsection

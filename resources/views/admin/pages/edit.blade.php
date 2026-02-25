@@ -54,10 +54,19 @@
 
                         <div class="form-group">
                             <label for="page_content"><strong>Page Content</strong></label>
-                            <textarea class="form-control" 
-                                      id="page_content" 
-                                      name="page_content" 
-                                      rows="15">{!! $page->content !!}</textarea>
+
+                            {{-- Editor.js usage guide --}}
+                            <div class="alert alert-info py-2 px-3 mb-2 small">
+                                <strong><i class="fas fa-keyboard mr-1"></i>Block Editor</strong> —
+                                Click inside the editor below, then:
+                                <span class="badge badge-light border mx-1"><kbd>/</kbd></span> to choose a block type &nbsp;|&nbsp;
+                                <span class="badge badge-light border mx-1"><kbd>Enter</kbd></span> for a new paragraph &nbsp;|&nbsp;
+                                <span class="badge badge-light border mx-1">+ button</span> on the left margin to add any block
+                            </div>
+
+                            <textarea id="page_content" name="page_content" style="display:none;">{!! $page->content !!}</textarea>
+                            <div id="editorjs" style="border:1px solid #4e73df;border-radius:0.35rem;min-height:400px;background:#fff;padding:8px 0;"></div>
+                            <div id="editorjs-status" class="text-muted small mt-1"><i class="fas fa-spinner fa-spin mr-1"></i>Loading editor...</div>
                         </div>
 
                         <hr>
@@ -222,318 +231,91 @@
 
 @section('page-level-styles')
 <style>
-    /* TipTap Editor Styles */
-    .tiptap-editor-wrapper {
-        border: 1px solid #d1d3e2;
-        border-radius: 0.35rem;
-        overflow: hidden;
-    }
-    
-    .tiptap-toolbar {
-        background: #f8f9fc;
-        border-bottom: 1px solid #d1d3e2;
-        padding: 8px 12px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-    }
-    
-    .tiptap-toolbar .btn-group {
-        display: flex;
-        gap: 2px;
-        margin-right: 8px;
-        padding-right: 8px;
-        border-right: 1px solid #d1d3e2;
-    }
-    
-    .tiptap-toolbar .btn-group:last-child {
-        border-right: none;
-    }
-    
-    .tiptap-toolbar button {
-        background: white;
-        border: 1px solid #d1d3e2;
-        border-radius: 4px;
-        padding: 6px 10px;
-        cursor: pointer;
-        font-size: 14px;
-        color: #5a5c69;
-        transition: all 0.15s;
-    }
-    
-    .tiptap-toolbar button:hover {
-        background: #eaecf4;
-        border-color: #bac8f3;
-    }
-    
-    .tiptap-toolbar button.is-active {
-        background: #4e73df;
-        color: white;
-        border-color: #4e73df;
-    }
-    
-    .tiptap-content {
-        min-height: 350px;
-        padding: 16px;
-        background: white;
-    }
-    
-    .tiptap-content:focus {
-        outline: none;
-    }
-    
-    /* Editor content styles */
-    .tiptap-content h1 { font-size: 2em; font-weight: bold; margin: 0.5em 0; }
-    .tiptap-content h2 { font-size: 1.5em; font-weight: bold; margin: 0.5em 0; }
-    .tiptap-content h3 { font-size: 1.25em; font-weight: bold; margin: 0.5em 0; }
-    .tiptap-content p { margin: 0.5em 0; }
-    .tiptap-content ul, .tiptap-content ol { padding-left: 1.5em; margin: 0.5em 0; }
-    .tiptap-content blockquote {
-        border-left: 3px solid #4e73df;
-        padding-left: 1em;
-        margin: 1em 0;
-        color: #6c757d;
-    }
-    .tiptap-content code {
-        background: #f8f9fc;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-family: monospace;
-    }
-    .tiptap-content pre {
-        background: #2d2d2d;
-        color: #f8f8f2;
-        padding: 1em;
-        border-radius: 4px;
-        overflow-x: auto;
-    }
-    .tiptap-content img {
-        max-width: 100%;
-        height: auto;
-        margin: 1em 0;
-    }
-    .tiptap-content a {
-        color: #4e73df;
-        text-decoration: underline;
-    }
-    .tiptap-content hr {
-        border: none;
-        border-top: 2px solid #e3e6f0;
-        margin: 1.5em 0;
-    }
-    
-    .ProseMirror {
-        min-height: 350px;
-    }
-    .ProseMirror:focus {
-        outline: none;
-    }
+    .ce-toolbar__actions { opacity: 1 !important; }
+    .ce-block__content, .ce-toolbar__content { max-width: 100% !important; }
+    .codex-editor { font-family: inherit; }
 </style>
 @endsection
 
 @section('script')
-<script type="importmap">
-{
-    "imports": {
-        "@tiptap/core": "https://esm.sh/@tiptap/core@2.1.13",
-        "@tiptap/starter-kit": "https://esm.sh/@tiptap/starter-kit@2.1.13",
-        "@tiptap/extension-image": "https://esm.sh/@tiptap/extension-image@2.1.13",
-        "@tiptap/extension-link": "https://esm.sh/@tiptap/extension-link@2.1.13",
-        "@tiptap/extension-underline": "https://esm.sh/@tiptap/extension-underline@2.1.13",
-        "@tiptap/extension-text-align": "https://esm.sh/@tiptap/extension-text-align@2.1.13",
-        "@tiptap/extension-placeholder": "https://esm.sh/@tiptap/extension-placeholder@2.1.13"
-    }
-}
-</script>
+<!-- Editor.js core + tools from jsDelivr CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/editorjs@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/header@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/list@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/quote@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/delimiter@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/image@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/underline@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/marker@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/inline-code@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/table@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/editorjs-undo@latest"></script>
+<script>
+    const textarea   = document.getElementById('page_content');
+    const rawContent = textarea.value.trim();
 
-<script type="module">
-    import { Editor } from '@tiptap/core';
-    import StarterKit from '@tiptap/starter-kit';
-    import Image from '@tiptap/extension-image';
-    import Link from '@tiptap/extension-link';
-    import Underline from '@tiptap/extension-underline';
-    import TextAlign from '@tiptap/extension-text-align';
-    import Placeholder from '@tiptap/extension-placeholder';
-
-    // Get the textarea and its content
-    const textarea = document.getElementById('page_content');
-    const initialContent = textarea.value || '<p></p>';
-    
-    // Hide the original textarea
-    textarea.style.display = 'none';
-    
-    // Create editor wrapper
-    const wrapper = document.createElement('div');
-    wrapper.className = 'tiptap-editor-wrapper';
-    wrapper.innerHTML = `
-        <div class="tiptap-toolbar">
-            <div class="btn-group">
-                <button type="button" data-action="undo" title="Undo"><i class="fas fa-undo"></i></button>
-                <button type="button" data-action="redo" title="Redo"><i class="fas fa-redo"></i></button>
-            </div>
-            <div class="btn-group">
-                <button type="button" data-action="bold" title="Bold"><i class="fas fa-bold"></i></button>
-                <button type="button" data-action="italic" title="Italic"><i class="fas fa-italic"></i></button>
-                <button type="button" data-action="underline" title="Underline"><i class="fas fa-underline"></i></button>
-                <button type="button" data-action="strike" title="Strikethrough"><i class="fas fa-strikethrough"></i></button>
-            </div>
-            <div class="btn-group">
-                <button type="button" data-action="heading1" title="Heading 1">H1</button>
-                <button type="button" data-action="heading2" title="Heading 2">H2</button>
-                <button type="button" data-action="heading3" title="Heading 3">H3</button>
-                <button type="button" data-action="paragraph" title="Paragraph">P</button>
-            </div>
-            <div class="btn-group">
-                <button type="button" data-action="alignLeft" title="Align Left"><i class="fas fa-align-left"></i></button>
-                <button type="button" data-action="alignCenter" title="Align Center"><i class="fas fa-align-center"></i></button>
-                <button type="button" data-action="alignRight" title="Align Right"><i class="fas fa-align-right"></i></button>
-                <button type="button" data-action="alignJustify" title="Justify"><i class="fas fa-align-justify"></i></button>
-            </div>
-            <div class="btn-group">
-                <button type="button" data-action="bulletList" title="Bullet List"><i class="fas fa-list-ul"></i></button>
-                <button type="button" data-action="orderedList" title="Numbered List"><i class="fas fa-list-ol"></i></button>
-                <button type="button" data-action="blockquote" title="Quote"><i class="fas fa-quote-right"></i></button>
-            </div>
-            <div class="btn-group">
-                <button type="button" data-action="link" title="Insert Link"><i class="fas fa-link"></i></button>
-                <button type="button" data-action="image" title="Insert Image"><i class="fas fa-image"></i></button>
-                <button type="button" data-action="horizontalRule" title="Horizontal Line"><i class="fas fa-minus"></i></button>
-            </div>
-            <div class="btn-group">
-                <button type="button" data-action="code" title="Inline Code"><i class="fas fa-code"></i></button>
-                <button type="button" data-action="codeBlock" title="Code Block"><i class="fas fa-file-code"></i></button>
-            </div>
-            <div class="btn-group">
-                <button type="button" data-action="clearFormat" title="Clear Formatting"><i class="fas fa-eraser"></i></button>
-            </div>
-        </div>
-        <div class="tiptap-content" id="tiptap-editor"></div>
-    `;
-    
-    textarea.parentNode.insertBefore(wrapper, textarea);
-    
-    // Initialize TipTap Editor
-    const editor = new Editor({
-        element: document.getElementById('tiptap-editor'),
-        extensions: [
-            StarterKit.configure({
-                heading: {
-                    levels: [1, 2, 3]
-                }
-            }),
-            Image.configure({
-                inline: true,
-                allowBase64: true
-            }),
-            Link.configure({
-                openOnClick: false,
-                HTMLAttributes: {
-                    target: '_blank'
-                }
-            }),
-            Underline,
-            TextAlign.configure({
-                types: ['heading', 'paragraph']
-            }),
-            Placeholder.configure({
-                placeholder: 'Start writing your page content...'
-            })
-        ],
-        content: initialContent,
-        onUpdate: ({ editor }) => {
-            textarea.value = editor.getHTML();
+    let initialData = { blocks: [] };
+    if (rawContent) {
+        try {
+            initialData = JSON.parse(rawContent);
+        } catch (e) {
+            // Legacy HTML content: wrap as a single paragraph block
+            initialData = { blocks: [{ type: 'paragraph', data: { text: rawContent } }] };
         }
-    });
-    
-    // Toolbar button handlers
-    const toolbar = wrapper.querySelector('.tiptap-toolbar');
-    
-    const actions = {
-        undo: () => editor.chain().focus().undo().run(),
-        redo: () => editor.chain().focus().redo().run(),
-        bold: () => editor.chain().focus().toggleBold().run(),
-        italic: () => editor.chain().focus().toggleItalic().run(),
-        underline: () => editor.chain().focus().toggleUnderline().run(),
-        strike: () => editor.chain().focus().toggleStrike().run(),
-        heading1: () => editor.chain().focus().toggleHeading({ level: 1 }).run(),
-        heading2: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
-        heading3: () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
-        paragraph: () => editor.chain().focus().setParagraph().run(),
-        alignLeft: () => editor.chain().focus().setTextAlign('left').run(),
-        alignCenter: () => editor.chain().focus().setTextAlign('center').run(),
-        alignRight: () => editor.chain().focus().setTextAlign('right').run(),
-        alignJustify: () => editor.chain().focus().setTextAlign('justify').run(),
-        bulletList: () => editor.chain().focus().toggleBulletList().run(),
-        orderedList: () => editor.chain().focus().toggleOrderedList().run(),
-        blockquote: () => editor.chain().focus().toggleBlockquote().run(),
-        code: () => editor.chain().focus().toggleCode().run(),
-        codeBlock: () => editor.chain().focus().toggleCodeBlock().run(),
-        horizontalRule: () => editor.chain().focus().setHorizontalRule().run(),
-        clearFormat: () => editor.chain().focus().unsetAllMarks().clearNodes().run(),
-        link: () => {
-            const url = prompt('Enter URL:');
-            if (url) {
-                editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-            }
+    }
+
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
+    const editor = new EditorJS({
+        holder: 'editorjs',
+        autofocus: true,
+        tools: {
+            header:    { class: Header,    inlineToolbar: true, config: { levels: [1,2,3,4], defaultLevel: 2 } },
+            list:      { class: List,      inlineToolbar: true },
+            quote:     { class: Quote,     inlineToolbar: true },
+            delimiter: Delimiter,
+            image: {
+                class: ImageTool,
+                config: {
+                    endpoints: {
+                        byFile: '{{ route("editor.image.upload") }}',
+                        byUrl:  '{{ route("editor.image.by-url") }}',
+                    },
+                    additionalRequestHeaders: {
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                    captionPlaceholder: 'Image caption (optional)',
+                },
+            },
+            underline: Underline,
+            marker:    Marker,
+            inlineCode: InlineCode,
+            table:     { class: Table, inlineToolbar: true },
         },
-        image: () => {
-            const url = prompt('Enter image URL:');
-            if (url) {
-                editor.chain().focus().setImage({ src: url }).run();
-            }
-        }
-    };
-    
-    toolbar.addEventListener('click', (e) => {
-        const button = e.target.closest('button');
-        if (!button) return;
-        
-        const action = button.dataset.action;
-        if (actions[action]) {
-            actions[action]();
-            updateToolbarState();
-        }
+        data: initialData,
+        placeholder: 'Click here or press / to choose a block type...',
+        onChange: async () => {
+            const savedData = await editor.save();
+            textarea.value  = JSON.stringify(savedData);
+        },
+        onReady: () => {
+            document.getElementById('editorjs-status').textContent = '✓ Editor ready — click inside to begin';
+            document.getElementById('editorjs-status').className = 'text-success small mt-1';
+            try { new Undo({ editor }); } catch(e) {}
+        },
     });
-    
-    // Update active state of buttons
-    function updateToolbarState() {
-        toolbar.querySelectorAll('button').forEach(btn => {
-            const action = btn.dataset.action;
-            let isActive = false;
-            
-            switch(action) {
-                case 'bold': isActive = editor.isActive('bold'); break;
-                case 'italic': isActive = editor.isActive('italic'); break;
-                case 'underline': isActive = editor.isActive('underline'); break;
-                case 'strike': isActive = editor.isActive('strike'); break;
-                case 'heading1': isActive = editor.isActive('heading', { level: 1 }); break;
-                case 'heading2': isActive = editor.isActive('heading', { level: 2 }); break;
-                case 'heading3': isActive = editor.isActive('heading', { level: 3 }); break;
-                case 'paragraph': isActive = editor.isActive('paragraph'); break;
-                case 'bulletList': isActive = editor.isActive('bulletList'); break;
-                case 'orderedList': isActive = editor.isActive('orderedList'); break;
-                case 'blockquote': isActive = editor.isActive('blockquote'); break;
-                case 'code': isActive = editor.isActive('code'); break;
-                case 'codeBlock': isActive = editor.isActive('codeBlock'); break;
-                case 'alignLeft': isActive = editor.isActive({ textAlign: 'left' }); break;
-                case 'alignCenter': isActive = editor.isActive({ textAlign: 'center' }); break;
-                case 'alignRight': isActive = editor.isActive({ textAlign: 'right' }); break;
-                case 'alignJustify': isActive = editor.isActive({ textAlign: 'justify' }); break;
-            }
-            
-            btn.classList.toggle('is-active', isActive);
-        });
-    }
-    
-    editor.on('selectionUpdate', updateToolbarState);
-    editor.on('update', updateToolbarState);
-    
-    // Initial state
-    updateToolbarState();
+
+    // Sync on form submit as a safety net
+    document.getElementById('pageForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const savedData = await editor.save();
+        textarea.value  = JSON.stringify(savedData);
+        e.target.submit();
+    });
 </script>
 
 <script>
-    // Page type toggle (non-module script for jQuery)
+    // Page type toggle
     $('input[name="page_type"]').on('change', function() {
         if ($(this).val() === 'single') {
             $('#parentSelectGroup').slideDown();
