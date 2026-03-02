@@ -1222,9 +1222,9 @@ async function reconcileStraddleWater (pi) {
 
   const rightAnchor = currReadings[0]
   const rightLitres = rightAnchor.litres ?? Math.round((rightAnchor.value ?? 0) * 1000)
-  // Only reconcile when consumption spans from a previous period into this one.
-  // If the first reading is on or before period start, it closes the previous period — do not overwrite this period's opening.
-  if (rightAnchor.date <= currP.start) return
+  // Only skip when the first reading is strictly before period start (no straddle).
+  // When the reading is on period start, it closes the previous period and we must run the straddle split.
+  if (rightAnchor.date < currP.start) return
 
   let leftPeriodIdx = -1
   let leftAnchor    = null
@@ -1692,14 +1692,15 @@ function buildPeriodsFromAccountData (data) {
       const periodReadings = m.readings.filter(r => r.date >= curStart && r.date <= end)
 
       // Shared shape: same as Test mode so recomputePeriodWater/Elec work unchanged.
-      // API water value in kL, electricity in kWh.
+      // API water: value may be in kL (e.g. 40.33) or L (e.g. 40325). Heuristic: whole number >= 1000 → litres.
       if (m.meter_type === 'water') {
-        const openingLitres = Math.round((opening.value ?? 0) * 1000)
+        const ov = Number(opening.value ?? 0)
+        const openingLitres = (ov >= 1000 && Number.isInteger(ov)) ? Math.round(ov) : Math.round(ov * 1000)
         period.water = makeWaterMeter(openingLitres, opening.date)
         period.water.readings = periodReadings.map(r => {
           const val = Number(r.value ?? 0)
-          const litres = Math.round(val * 1000)
-          return { id: r.id, date: r.date, value: val, klStr: val.toFixed(2), litres, error: '' }
+          const litres = (val >= 1000 && Number.isInteger(val)) ? Math.round(val) : Math.round(val * 1000)
+          return { id: r.id, date: r.date, value: val, klStr: (litres / 1000).toFixed(2), litres, error: '' }
         })
       } else if (m.meter_type === 'electricity') {
         const openingKwh = Math.round(opening.value ?? 0)
