@@ -177,18 +177,19 @@
             <!-- Divider -->
             <hr class="sidebar-divider">
 
-            <!-- Nav Item - Billing Calculator -->
+            <!-- Nav Item - Calculator (dropdown: Period to Period / Date to Date) -->
             <li class="nav-item">
-                <a class="nav-link" href="{{ route('billing-calculator') }}">
+                <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#collapseCalculator"
+                    aria-expanded="true" aria-controls="collapseCalculator">
                     <i class="fas fa-fw fa-calculator"></i>
-                    <span>Billing Calculator</span></a>
-            </li>
-
-            <!-- Nav Item - Calculator (Inertia) -->
-            <li class="nav-item">
-                <a class="nav-link" href="{{ route('calculator') }}">
-                    <i class="fas fa-fw fa-calculator"></i>
-                    <span>Calculator</span></a>
+                    <span>Calculator</span>
+                </a>
+                <div id="collapseCalculator" class="collapse" aria-labelledby="headingCalculator" data-parent="#accordionSidebar">
+                    <div class="bg-white py-2 collapse-inner rounded cust-sidebar-bg">
+                        <a class="collapse-item cust-sidebar-sub" href="{{ route('calculator') }}">Period to Period</a>
+                        <a class="collapse-item cust-sidebar-sub" href="{{ route('calculator.date-to-date') }}">Date to Date</a>
+                    </div>
+                </div>
             </li>
 
             <li class="nav-item">

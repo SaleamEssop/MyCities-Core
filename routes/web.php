@@ -343,6 +343,7 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
 
     // --- CALCULATOR (PD.md ↔ Calculator.php → Calculator.vue via Inertia) ---
     Route::get('calculator', [\App\Http\Controllers\Admin\CalculatorController::class, 'index'])->name('calculator');
+    Route::get('calculator/date-to-date', [\App\Http\Controllers\Admin\CalculatorController::class, 'dateToDate'])->name('calculator.date-to-date');
     Route::post('calculator/compute', [\App\Http\Controllers\Admin\CalculatorController::class, 'compute'])->name('calculator.compute');
     Route::post('calculator/compute-charge', [\App\Http\Controllers\Admin\CalculatorController::class, 'computeCharge'])->name('calculator.compute-charge');
     Route::get('calculator/meter/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'getMeterData'])->name('calculator.meter-data');

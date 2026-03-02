@@ -6,11 +6,14 @@
       <div class="cp-header">
         <div>
           <div class="cp-title">Billing Calculator</div>
-          <div class="cp-sub">PD.md ↔ Calculator.php</div>
+          <div class="cp-sub">
+            <template v-if="calculatorMode === 'dateToDate'">Date to Date · period = anchor until first reading ≥ 30 days</template>
+            <template v-else>PD.md ↔ Calculator.php</template>
+          </div>
         </div>
         <div class="cp-tabs">
           <button :class="['cp-tab', mode === 'test' && 'cp-tab--on']" @click="setMode('test')">Test User</button>
-          <button :class="['cp-tab', mode === 'account' && 'cp-tab--on']" @click="setMode('account')">User +Account</button>
+          <button :class="['cp-tab', mode === 'account' && 'cp-tab--on']" @click="setMode('account')">User + Account</button>
         </div>
       </div>
 
@@ -18,28 +21,53 @@
       <template v-if="mode === 'test'">
         <div class="card">
           <div class="section-label">Setup</div>
-          <div class="fields-row">
-            <div class="field">
-              <label class="f-label">Bill day</label>
-              <input type="number" v-model.number="test.billDay" min="1" max="31" class="f-input"
-                @change="recomputeTestPeriod" />
+          <!-- Period-to-Period: bill day, start month, tariff -->
+          <template v-if="calculatorMode === 'period'">
+            <div class="fields-row">
+              <div class="field">
+                <label class="f-label">Bill day</label>
+                <input type="number" v-model.number="test.billDay" min="1" max="31" class="f-input"
+                  @change="recomputeTestPeriod" />
+              </div>
+              <div class="field">
+                <label class="f-label">Start Month</label>
+                <input type="month" v-model="test.startMonth" class="f-input" @change="recomputeTestPeriod" />
+              </div>
+              <div class="field field--grow">
+                <label class="f-label">Tariff Selector</label>
+                <select v-model="test.templateId" class="f-input" @change="onTestTemplateChange">
+                  <option value="">— Select Tariff —</option>
+                  <option v-for="t in filteredTariffTemplates" :key="t.id" :value="t.id">
+                    {{ t.name }}{{ t.region_name ? ` (${t.region_name})` : '' }}
+                  </option>
+                </select>
+              </div>
             </div>
-            <div class="field">
-              <label class="f-label">Start Month</label>
-              <input type="month" v-model="test.startMonth" class="f-input" @change="recomputeTestPeriod" />
+          </template>
+          <!-- Date-to-Date: anchor date, anchor reading, tariff (D2D only) -->
+          <template v-else>
+            <div class="fields-row">
+              <div class="field">
+                <label class="f-label">Anchor date</label>
+                <input type="date" v-model="d2d.anchorDate" class="f-input" @change="buildD2dPeriods" />
+              </div>
+              <div class="field">
+                <label class="f-label">Anchor reading (L)</label>
+                <input type="number" v-model.number="d2d.anchorLitres" min="0" step="1" class="f-input" @change="buildD2dPeriods" />
+              </div>
+              <div class="field field--grow">
+                <label class="f-label">Tariff (Date-to-Date only)</label>
+                <select v-model="d2d.templateId" class="f-input" @change="buildD2dPeriods">
+                  <option value="">— Select Tariff —</option>
+                  <option v-for="t in filteredTariffTemplates" :key="t.id" :value="t.id">
+                    {{ t.name }}{{ t.region_name ? ` (${t.region_name})` : '' }}
+                  </option>
+                </select>
+              </div>
             </div>
-            <div class="field field--grow">
-              <label class="f-label">Tariff Selector</label>
-              <select v-model="test.templateId" class="f-input" @change="onTestTemplateChange">
-                <option value="">— Select Tariff —</option>
-                <option v-for="t in tariffTemplates" :key="t.id" :value="t.id">
-                  {{ t.name }}{{ t.region_name ? ` (${t.region_name})` : '' }}
-                </option>
-              </select>
-            </div>
-          </div>
-          <!-- Current date override row -->
-          <div class="current-date-row">
+          </template>
+          <!-- Current date override row (Period-to-Period only) -->
+          <div v-if="calculatorMode === 'period'" class="current-date-row">
             <span class="current-date-label"><i class="fas fa-calendar-day"></i> Current Date</span>
             <input type="date" v-model="test.currentDate" class="f-input current-date-input"
               :min="test.periods.length ? test.periods[test.periods.length - 1].start : test.periodStart"
@@ -57,7 +85,7 @@
             </span>
           </div>
 
-          <div v-if="test.periodStart" class="period-chip-row">
+          <div v-if="calculatorMode === 'period' && test.periodStart" class="period-chip-row">
             <span class="chip-period">{{ fmt(test.periodStart) }} → {{ fmt(test.periodEnd) }}</span>
             <span class="chip-days">{{ test.periodDays }} block days</span>
             <span v-if="hasWater" class="chip-meter chip-meter--water"><i class="fas fa-tint"></i> Water</span>
@@ -71,12 +99,18 @@
       <template v-if="mode === 'account'">
         <div class="card">
           <div class="section-label">Select Account</div>
+          <div class="fields-row" v-if="calculatorMode === 'dateToDate'">
+            <div class="field field--grow">
+              <label class="f-label">Search user (name, email, phone, ID)</label>
+              <input type="text" v-model="userSearch" class="f-input" placeholder="Type to filter…" />
+            </div>
+          </div>
           <div class="fields-row">
             <div class="field field--grow">
               <label class="f-label">User</label>
               <select v-model="ua.userId" class="f-input" @change="onUserChange">
                 <option value="">— Select User —</option>
-                <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }} ({{ u.email }})</option>
+                <option v-for="u in filteredUsers" :key="u.id" :value="u.id">{{ u.name }} ({{ u.email }})</option>
               </select>
             </div>
             <div class="field field--grow">
@@ -112,12 +146,8 @@
         </div>
       </template>
 
-      <!-- ══════════════════════════════════════════════════
-           TOP-LEVEL METER TABS (Water / Electricity)
-           Visible as soon as a tariff is selected in test mode, or account is loaded
-           ══════════════════════════════════════════════════ -->
       <div
-        v-if="(mode === 'test' && !!test.periodStart) || (mode === 'account' && activePeriods.length > 0)"
+        v-if="(mode === 'test' && (!!test.periodStart || (calculatorMode === 'dateToDate' && d2d.anchorDate && d2dPeriods.length > 0))) || (mode === 'account' && activePeriods.length > 0)"
         class="top-meter-tabs"
       >
         <button
@@ -152,7 +182,7 @@
             <div class="period-hdr-left">
               <div class="period-hdr-title">
                 Period {{ pi + 1 }}
-                <span v-if="pi === activePeriods.length - 1 && mode === 'account'" class="chip-open">OPEN</span>
+                <span v-if="pi === activePeriods.length - 1 && (mode === 'account' || (calculatorMode === 'dateToDate' && !period.closed))" class="chip-open">OPEN</span>
                 <span class="period-hdr-dates">
                   {{ fmt(period.start) }} → {{ fmt(period.end) }}
                   <span class="chip-days">{{ period.blockDays }} days</span>
@@ -179,11 +209,11 @@
                         ? fmtN(period.electricity.provisionalClosingKwh) : '_ _' }} kWh
                   </span>
                 </span>
-                <template v-if="period.bill">
+                <template v-if="effectivePeriodBill(period, pi)">
                   <span class="cs-sep">·</span>
                   <span class="cs-item">
                     <span class="cs-label">Bill:</span>
-                    <span class="cs-val cs-val--bill">R {{ fmtMoney(period.bill.grand_total) }}</span>
+                    <span class="cs-val cs-val--bill">R {{ fmtMoney(effectivePeriodBill(period, pi).grand_total) }}</span>
                   </span>
                 </template>
               </div>
@@ -240,7 +270,7 @@
                 </span>
               </div>
 
-              <!-- Stats bar -->
+              <!-- Stats bar (D2D: no Projected Usage) -->
               <div class="stats-bar">
                 <div class="stat-cell">
                   <div class="stat-label">Daily Usage</div>
@@ -250,7 +280,7 @@
                   <div class="stat-label">Current Usage</div>
                   <div class="stat-val">{{ period.water.stats && period.water.stats.currentR > 0 ? 'R ' + fmtMoney(period.water.stats.currentR) : '_ _' }}</div>
                 </div>
-                <div class="stat-cell">
+                <div v-if="calculatorMode !== 'dateToDate'" class="stat-cell">
                   <div class="stat-label">Projected Usage</div>
                   <div class="stat-val">{{ period.water.stats ? 'R ' + fmtMoney(period.water.stats.projectedR) : '_ _' }}</div>
                 </div>
@@ -293,7 +323,7 @@
                   <span class="readings-header-label">Readings</span>
                   <span class="readings-header-hint">{{ mode === 'test' ? 'enter in kL · format 0000.00' : 'kL' }}</span>
                 </div>
-                <!-- Test mode: editable -->
+                <!-- Test mode: editable (D2D open period syncs to d2d.readings) -->
                 <template v-if="mode === 'test'">
                   <div
                     v-for="(r, ri) in period.water.readings"
@@ -305,14 +335,16 @@
                       <i class="fas fa-calendar-alt date-icon"></i>
                       <input type="date" v-model="r.date" class="f-input r-date"
                         :min="period.start" :max="period.end"
-                        @change="recomputePeriodWater(period, pi)" />
+                        @change="calculatorMode === 'dateToDate' && !period.closed ? syncD2dReading(period, ri, pi) : recomputePeriodWater(period, pi)" />
                     </div>
-                    <MeterInput v-model="r.klStr" @change="onWaterInput(period, r, pi)" />
-                    <div class="r-litres" v-if="r.litres && !r.error">{{ fmtN(r.litres) }} L</div>
+                    <MeterInput v-model="r.klStr"
+                      @change="calculatorMode === 'dateToDate' && !period.closed ? (r.litres = klStrToLitres(r.klStr || '0'), syncD2dReading(period, ri, pi)) : onWaterInput(period, r, pi)" />
+                    <div class="r-litres" v-if="r.litres != null && !r.error">{{ fmtN(r.litres) }} L</div>
                     <div class="r-seq-error" v-if="r.error">
                       <i class="fas fa-exclamation-triangle"></i> {{ r.error }}
                     </div>
-                    <button class="btn-rm" @click="period.water.readings.splice(ri, 1); recomputePeriodWater(period, pi)">
+                    <button class="btn-rm"
+                      @click="calculatorMode === 'dateToDate' && !period.closed ? removeD2dReading(period, ri, pi) : (period.water.readings.splice(ri, 1), recomputePeriodWater(period, pi))">
                       <i class="fas fa-times"></i>
                     </button>
                   </div>
@@ -418,7 +450,7 @@
                 <span class="por-val">{{ fmtN(period.electricity.openingKwh) }} kWh</span>
               </div>
 
-              <!-- Stats bar (electricity) -->
+              <!-- Stats bar (electricity) (D2D: no Projected Usage) -->
               <div class="stats-bar stats-bar--elec">
                 <div class="stat-cell">
                   <div class="stat-label">Daily Usage</div>
@@ -428,7 +460,7 @@
                   <div class="stat-label">Current Usage</div>
                   <div class="stat-val">{{ period.electricity.stats && period.electricity.stats.currentR > 0 ? 'R ' + fmtMoney(period.electricity.stats.currentR) : '_ _' }}</div>
                 </div>
-                <div class="stat-cell">
+                <div v-if="calculatorMode !== 'dateToDate'" class="stat-cell">
                   <div class="stat-label">Projected Usage</div>
                   <div class="stat-val">{{ period.electricity.stats ? 'R ' + fmtMoney(period.electricity.stats.projectedR) : '_ _' }}</div>
                 </div>
@@ -527,7 +559,7 @@
 
             <!-- Period actions -->
             <div class="period-actions">
-              <button v-if="mode === 'test' && !!period[activeMeter(period)]" class="btn-add-reading" @click="addReadingToPeriod(period)">
+              <button v-if="mode === 'test' && !!period[activeMeter(period)]" class="btn-add-reading" @click="addReadingToPeriod(period, pi)">
                 <i class="fas fa-plus"></i> Add Reading
               </button>
               <button class="btn-calc" @click="calcPeriod(pi)"
@@ -535,9 +567,14 @@
                 <i v-if="period.calculating" class="fas fa-circle-notch fa-spin"></i>
                 {{ period.calculating ? 'Calculating…' : 'Calculate' }}
               </button>
-              <button v-if="period.bill" class="btn-view-bill" @click="period.showBill = !period.showBill">
-                <i class="fas" :class="period.showBill ? 'fa-eye-slash' : 'fa-file-invoice-dollar'"></i>
-                {{ period.showBill ? 'Hide Bill' : 'View Bill' }}
+              <button
+                v-if="period.bill || (calculatorMode === 'dateToDate' && period.water)"
+                class="btn-view-bill"
+                :disabled="!effectivePeriodBill(period, pi) && (!canCalcPeriod(period, pi) || period.calculating)"
+                @click="viewBillClick(period, pi)"
+              >
+                <i class="fas" :class="effectivePeriodShowBill(period, pi) ? 'fa-eye-slash' : 'fa-file-invoice-dollar'"></i>
+                {{ effectivePeriodShowBill(period, pi) ? 'Hide Bill' : 'View Bill' }}
               </button>
               <span v-if="!canCalcPeriod(period, pi) && !period.calculating" class="calc-block-hint">
                 <i class="fas fa-info-circle"></i> {{ calcBlockReason(period, pi) }}
@@ -546,31 +583,35 @@
             <div v-if="period.calcError" class="msg-error">{{ period.calcError }}</div>
 
             <!-- ══ BILL — shown only when View Bill is clicked ══ -->
-            <div v-if="period.bill && period.showBill" class="period-billing">
+            <div v-if="effectivePeriodBill(period, pi) && effectivePeriodShowBill(period, pi)" class="period-billing">
               <div class="period-billing-header">
                 <i class="fas fa-file-invoice-dollar"></i>
                 Bill · Period {{ pi + 1 }}: {{ fmt(period.start) }} → {{ fmt(period.end) }}
               </div>
 
               <!-- Water section -->
-              <div v-if="period.bill.water" class="bill-meter-section">
+              <div v-if="effectivePeriodBill(period, pi)?.water" class="bill-meter-section">
                 <div class="bill-meter-hdr bill-meter-hdr--water">
                   <i class="fas fa-tint"></i> Water
                   <span class="bill-meter-consumption">
-                    {{ fmtN(period.bill.water.consumption_litres) }} L · {{ fmtKl(period.bill.water.consumption_kl) }} kL
+                    {{ fmtN(effectivePeriodBill(period, pi).water.consumption_litres) }} L · {{ fmtKl(effectivePeriodBill(period, pi).water.consumption_kl) }} kL
                   </span>
                 </div>
-                <div class="bill-grid">
-                  <div class="bill-stat"><div class="bill-stat-label">Usage Charge</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.water.usage_charge) }}</div></div>
-                  <div class="bill-stat"><div class="bill-stat-label">VAT</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.water.vat_amount) }}</div></div>
-                  <div class="bill-stat"><div class="bill-stat-label">Water Subtotal</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.water.usage_charge + period.bill.water.vat_amount) }}</div></div>
+                <div v-if="calculatorMode === 'dateToDate' && period.blockDays > 0" class="bill-daily-consumption">
+                  <span class="bill-daily-label">Daily consumption</span>
+                  <span class="bill-daily-val">{{ fmtN(Math.round(effectivePeriodBill(period, pi).water.consumption_litres / period.blockDays), 0) }} L/day</span>
                 </div>
-                <div v-if="period.bill.water.tier_breakdown?.length" class="tier-section">
+                <div class="bill-grid">
+                  <div class="bill-stat"><div class="bill-stat-label">Usage Charge</div><div class="bill-stat-val">R {{ fmtMoney(effectivePeriodBill(period, pi).water.usage_charge) }}</div></div>
+                  <div class="bill-stat"><div class="bill-stat-label">VAT</div><div class="bill-stat-val">R {{ fmtMoney(effectivePeriodBill(period, pi).water.vat_amount) }}</div></div>
+                  <div class="bill-stat"><div class="bill-stat-label">Water Subtotal</div><div class="bill-stat-val">R {{ fmtMoney(effectivePeriodBill(period, pi).water.usage_charge + effectivePeriodBill(period, pi).water.vat_amount) }}</div></div>
+                </div>
+                <div v-if="effectivePeriodBill(period, pi).water.tier_breakdown?.length" class="tier-section">
                   <div class="tier-label">Tier Breakdown</div>
                   <table class="data-table">
                     <thead><tr><th>Tier</th><th class="num">Units (kL)</th><th class="num">Rate (R/kL)</th><th class="num">Charge</th></tr></thead>
                     <tbody>
-                      <tr v-for="(t, i) in period.bill.water.tier_breakdown" :key="i">
+                      <tr v-for="(t, i) in effectivePeriodBill(period, pi).water.tier_breakdown" :key="i">
                         <td>Tier {{ i + 1 }}</td>
                         <td class="num">{{ fmtKl(t.units_kl) }}</td>
                         <td class="num">{{ t.rate }}</td>
@@ -582,22 +623,26 @@
               </div>
 
               <!-- Electricity section -->
-              <div v-if="period.bill.electricity" class="bill-meter-section">
+              <div v-if="effectivePeriodBill(period, pi)?.electricity" class="bill-meter-section">
                 <div class="bill-meter-hdr bill-meter-hdr--elec">
                   <i class="fas fa-bolt"></i> Electricity
-                  <span class="bill-meter-consumption">{{ fmtN(period.bill.electricity.consumption_litres) }} kWh</span>
+                  <span class="bill-meter-consumption">{{ fmtN(effectivePeriodBill(period, pi).electricity.consumption_litres) }} kWh</span>
+                </div>
+                <div v-if="calculatorMode === 'dateToDate' && period.blockDays > 0" class="bill-daily-consumption">
+                  <span class="bill-daily-label">Daily consumption</span>
+                  <span class="bill-daily-val">{{ fmtN(Math.round(effectivePeriodBill(period, pi).electricity.consumption_litres / period.blockDays), 0) }} kWh/day</span>
                 </div>
                 <div class="bill-grid">
-                  <div class="bill-stat"><div class="bill-stat-label">Usage Charge</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.electricity.usage_charge) }}</div></div>
-                  <div class="bill-stat"><div class="bill-stat-label">VAT</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.electricity.vat_amount) }}</div></div>
-                  <div class="bill-stat"><div class="bill-stat-label">Electricity Subtotal</div><div class="bill-stat-val">R {{ fmtMoney(period.bill.electricity.usage_charge + period.bill.electricity.vat_amount) }}</div></div>
+                  <div class="bill-stat"><div class="bill-stat-label">Usage Charge</div><div class="bill-stat-val">R {{ fmtMoney(effectivePeriodBill(period, pi).electricity.usage_charge) }}</div></div>
+                  <div class="bill-stat"><div class="bill-stat-label">VAT</div><div class="bill-stat-val">R {{ fmtMoney(effectivePeriodBill(period, pi).electricity.vat_amount) }}</div></div>
+                  <div class="bill-stat"><div class="bill-stat-label">Electricity Subtotal</div><div class="bill-stat-val">R {{ fmtMoney(effectivePeriodBill(period, pi).electricity.usage_charge + effectivePeriodBill(period, pi).electricity.vat_amount) }}</div></div>
                 </div>
-                <div v-if="period.bill.electricity.tier_breakdown?.length" class="tier-section">
+                <div v-if="effectivePeriodBill(period, pi).electricity.tier_breakdown?.length" class="tier-section">
                   <div class="tier-label">Tier Breakdown</div>
                   <table class="data-table">
                     <thead><tr><th>Tier</th><th class="num">Units (kWh)</th><th class="num">Rate (R/kWh)</th><th class="num">Charge</th></tr></thead>
                     <tbody>
-                      <tr v-for="(t, i) in period.bill.electricity.tier_breakdown" :key="i">
+                      <tr v-for="(t, i) in effectivePeriodBill(period, pi).electricity.tier_breakdown" :key="i">
                         <td>Tier {{ i + 1 }}</td>
                         <td class="num">{{ fmtN(t.units_kl, 0) }}</td>
                         <td class="num">{{ t.rate }}</td>
@@ -609,12 +654,12 @@
               </div>
 
               <!-- Fixed / generic charges -->
-              <div v-if="period.bill.fixed_breakdown?.length" class="bill-meter-section">
+              <div v-if="effectivePeriodBill(period, pi)?.fixed_breakdown?.length" class="bill-meter-section">
                 <div class="bill-meter-hdr bill-meter-hdr--generic">
                   <i class="fas fa-list-ul"></i> Fixed Charges
                 </div>
                 <div class="bill-grid">
-                  <div v-for="(f, fi) in period.bill.fixed_breakdown" :key="fi" class="bill-stat">
+                  <div v-for="(f, fi) in effectivePeriodBill(period, pi).fixed_breakdown" :key="fi" class="bill-stat">
                     <div class="bill-stat-label">{{ f.name }}</div>
                     <div class="bill-stat-val">R {{ fmtMoney(f.amount) }}</div>
                   </div>
@@ -622,17 +667,17 @@
               </div>
 
               <!-- Adjustment b/f — detailed breakdown -->
-              <div v-if="period.bill.adjustment_brought_forward" class="bill-meter-section bill-adj-section">
+              <div v-if="effectivePeriodBill(period, pi)?.adjustment_brought_forward" class="bill-meter-section bill-adj-section">
                 <div class="bill-meter-hdr bill-meter-hdr--adj">
                   <i class="fas fa-exchange-alt"></i> Adjustment b/f
-                  <span :class="['bill-meter-consumption', period.bill.adjustment_brought_forward > 0 ? 'val-shortfall' : 'val-surplus']">
-                    {{ period.bill.adjustment_brought_forward > 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(period.bill.adjustment_brought_forward)) }}
+                  <span :class="['bill-meter-consumption', effectivePeriodBill(period, pi).adjustment_brought_forward > 0 ? 'val-shortfall' : 'val-surplus']">
+                    {{ effectivePeriodBill(period, pi).adjustment_brought_forward > 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(effectivePeriodBill(period, pi).adjustment_brought_forward)) }}
                   </span>
                 </div>
 
                 <!-- Per-period detail rows -->
-                <template v-if="period.bill.adjustment_detail?.length">
-                  <div v-for="(d, di) in period.bill.adjustment_detail" :key="di" class="adj-detail-row">
+                <template v-if="effectivePeriodBill(period, pi).adjustment_detail?.length">
+                  <div v-for="(d, di) in effectivePeriodBill(period, pi).adjustment_detail" :key="di" class="adj-detail-row">
                     <div class="adj-detail-period">
                       <i class="fas fa-calendar-alt"></i>
                       Period {{ d.periodNum }} &nbsp;·&nbsp; {{ fmt(d.periodStart) }} → {{ fmt(d.periodEnd) }}
@@ -667,27 +712,27 @@
 
               <!-- Grand total -->
               <div class="bill-grand-total">
-                <div class="bgt-row" v-if="period.bill.water">
+                <div class="bgt-row" v-if="effectivePeriodBill(period, pi)?.water">
                   <span>Water</span>
-                  <span>R {{ fmtMoney(period.bill.water.usage_charge + period.bill.water.vat_amount) }}</span>
+                  <span>R {{ fmtMoney(effectivePeriodBill(period, pi).water.usage_charge + effectivePeriodBill(period, pi).water.vat_amount) }}</span>
                 </div>
-                <div class="bgt-row" v-if="period.bill.electricity">
+                <div class="bgt-row" v-if="effectivePeriodBill(period, pi)?.electricity">
                   <span>Electricity</span>
-                  <span>R {{ fmtMoney(period.bill.electricity.usage_charge + period.bill.electricity.vat_amount) }}</span>
+                  <span>R {{ fmtMoney(effectivePeriodBill(period, pi).electricity.usage_charge + effectivePeriodBill(period, pi).electricity.vat_amount) }}</span>
                 </div>
-                <div class="bgt-row" v-if="period.bill.fixed_total">
+                <div class="bgt-row" v-if="effectivePeriodBill(period, pi)?.fixed_total">
                   <span>Fixed Charges</span>
-                  <span>R {{ fmtMoney(period.bill.fixed_total) }}</span>
+                  <span>R {{ fmtMoney(effectivePeriodBill(period, pi).fixed_total) }}</span>
                 </div>
-                <div v-if="period.bill.adjustment_brought_forward" class="bgt-row">
+                <div v-if="effectivePeriodBill(period, pi)?.adjustment_brought_forward" class="bgt-row">
                   <span>Adjustment b/f</span>
-                  <span :class="period.bill.adjustment_brought_forward > 0 ? 'val-shortfall' : 'val-surplus'">
-                    {{ period.bill.adjustment_brought_forward > 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(period.bill.adjustment_brought_forward)) }}
+                  <span :class="effectivePeriodBill(period, pi).adjustment_brought_forward > 0 ? 'val-shortfall' : 'val-surplus'">
+                    {{ effectivePeriodBill(period, pi).adjustment_brought_forward > 0 ? '+' : '' }}R {{ fmtMoney(Math.abs(effectivePeriodBill(period, pi).adjustment_brought_forward)) }}
                   </span>
                 </div>
                 <div class="bgt-total">
                   <span>TOTAL</span>
-                  <span>R {{ fmtMoney(period.bill.grand_total) }}</span>
+                  <span>R {{ fmtMoney(effectivePeriodBill(period, pi).grand_total) }}</span>
                 </div>
               </div>
             </div><!-- /bill -->
@@ -751,7 +796,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import MeterInput  from '@/components/MeterInput.vue'
 import ElecInput   from '@/components/ElecInput.vue'
@@ -760,14 +805,39 @@ import ElecInput   from '@/components/ElecInput.vue'
 const alarmModal = ref({ show: false, items: [] })
 
 const props = defineProps({
-  users:           { type: Array,  default: () => [] },
-  tariffTemplates: { type: Array,  default: () => [] },
-  today:           { type: String, default: '' },
+  users:            { type: Array,  default: () => [] },
+  tariffTemplates:  { type: Array,  default: () => [] },
+  today:            { type: String, default: '' },
+  calculatorMode:   { type: String, default: 'period' }, // 'period' | 'dateToDate'
 })
 
 // ── Mode ──────────────────────────────────────────────────────────────────────
 const mode = ref('test')
 function setMode (m) { mode.value = m }
+
+// ── Tariff filter: Date-to-Date mode shows only DATE_TO_DATE templates ──────────
+const filteredTariffTemplates = computed(() => {
+  const list = props.tariffTemplates || []
+  if (props.calculatorMode === 'dateToDate') {
+    return list.filter(t => (t.billing_type || 'MONTHLY') === 'DATE_TO_DATE')
+  }
+  return list
+})
+
+// ── User search (account mode: filter by name, email, phone, ID) ─────────────────
+const userSearch = ref('')
+const filteredUsers = computed(() => {
+  const list = props.users || []
+  const q = (userSearch.value || '').toString().trim().toLowerCase()
+  if (!q) return list
+  return list.filter(u => {
+    const name = (u.name || '').toLowerCase()
+    const email = (u.email || '').toLowerCase()
+    const phone = (u.contact_number || '').toString().toLowerCase()
+    const id = String(u.id || '')
+    return name.includes(q) || email.includes(q) || phone.includes(q) || id.includes(q)
+  })
+})
 
 // ── kL ↔ Litres ──────────────────────────────────────────────────────────────
 function klStrToLitres (klStr) {
@@ -797,6 +867,22 @@ const test = ref({
   currentDate:       props.today || localDateStr(new Date()),
   currentDateActive: false,
 })
+
+// ══════════════════════════════════════════════════════════
+// DATE-TO-DATE (D2D): anchor + readings; period closes when reading >= 30 days from anchor
+// ══════════════════════════════════════════════════════════
+const D2D_MIN_DAYS = 30
+const d2d = ref({
+  anchorDate:   props.today || localDateStr(new Date()),
+  anchorLitres: 0,
+  templateId:   '',
+  readings:     [], // { date, litres }
+})
+// Persist bill + showBill per period index (D2D periods are recreated by computed)
+const d2dBillState = ref({})
+function buildD2dPeriods () {
+  // No-op; d2dPeriods is computed reactively
+}
 
 // Effective "today": uses the test-mode date override when active, otherwise the server date.
 // Account mode always uses props.today (real server date).
@@ -867,15 +953,17 @@ function readDayStatus (period) {
   return { readDay, daysTo, lastReadDate, daysSinceLast, inWindow }
 }
 
-// Tariff meter flags
+// Tariff meter flags (use D2D template when in dateToDate mode)
 const hasWater = computed(() => {
-  if (!test.value.templateId) return true
-  const t = props.tariffTemplates.find(t => String(t.id) === String(test.value.templateId))
+  const tid = props.calculatorMode === 'dateToDate' ? d2d.value.templateId : test.value.templateId
+  if (!tid) return true
+  const t = props.tariffTemplates.find(t => String(t.id) === String(tid))
   return t ? (t.is_water !== false && Number(t.is_water) !== 0) : true
 })
 const hasElec = computed(() => {
-  if (!test.value.templateId) return false
-  const t = props.tariffTemplates.find(t => String(t.id) === String(test.value.templateId))
+  const tid = props.calculatorMode === 'dateToDate' ? d2d.value.templateId : test.value.templateId
+  if (!tid) return false
+  const t = props.tariffTemplates.find(t => String(t.id) === String(tid))
   return t ? !!t.is_electricity : false
 })
 
@@ -1115,7 +1203,15 @@ async function addPeriod () {
   if (newP.electricity) recomputePeriodElec(newP, periods.length - 1)
 }
 
-function addReadingToPeriod (period) {
+function addReadingToPeriod (period, pi) {
+  if (props.calculatorMode === 'dateToDate' && mode.value === 'test' && period.water && !period.closed) {
+    const lastDate = period.water.readings.length > 0
+      ? period.water.readings[period.water.readings.length - 1].date
+      : (period.water.openingDate || period.start)
+    d2d.value.readings.push({ date: lastDate || props.today || localDateStr(new Date()), litres: 0 })
+    recalcD2dOpenPeriodBill(pi)
+    return
+  }
   const tab = activeMeter(period)
   const m   = period[tab]
   if (!m) return
@@ -1127,6 +1223,24 @@ function addReadingToPeriod (period) {
   } else {
     m.readings.push({ date: lastDate, kwh: '000000', kwhInt: 0, error: '' })
   }
+}
+
+function syncD2dReading (period, ri, pi) {
+  if (period.d2dReadingsStartIndex == null) return
+  const r = period.water?.readings?.[ri]
+  if (!r) return
+  const idx = period.d2dReadingsStartIndex + ri
+  if (idx < 0 || idx >= d2d.value.readings.length) return
+  d2d.value.readings[idx] = { date: r.date, litres: r.litres != null ? r.litres : klStrToLitres(r.klStr || '0') }
+  if (typeof pi === 'number') recalcD2dOpenPeriodBill(pi)
+}
+
+function removeD2dReading (period, ri, pi) {
+  if (period.d2dReadingsStartIndex == null) return
+  const idx = period.d2dReadingsStartIndex + ri
+  if (idx < 0 || idx >= d2d.value.readings.length) return
+  d2d.value.readings.splice(idx, 1)
+  if (typeof pi === 'number') recalcD2dOpenPeriodBill(pi)
 }
 
 // ── Water recompute ───────────────────────────────────────────────────────────
@@ -1415,7 +1529,7 @@ function formatElecAdj (period) {
 // ── Calculate period bill (test + account unified) ────────────────────────────
 function calcBlockReason (period, pi) {
   const tariffId = mode.value === 'test'
-    ? test.value.templateId
+    ? effectiveTemplateId.value
     : ua.value.accountData?.tariff?.id
   if (!tariffId) {
     return mode.value === 'test'
@@ -1442,7 +1556,7 @@ function canCalcPeriod (period, pi) {
 async function calcPeriod (pi) {
   const period   = activePeriods.value[pi]
   const tariffId = mode.value === 'test'
-    ? parseInt(test.value.templateId)
+    ? parseInt(effectiveTemplateId.value)
     : ua.value.accountData?.tariff?.id
   const accountId = mode.value === 'account'
     ? ua.value.accountData?.account?.id
@@ -1450,6 +1564,53 @@ async function calcPeriod (pi) {
 
   if (!tariffId) { period.calcError = 'No tariff selected.'; return }
   await computePeriodBill(period, tariffId, accountId)
+}
+
+function effectivePeriodBill (period, pi) {
+  if (props.calculatorMode === 'dateToDate') return d2dBillState.value[pi]?.bill ?? period.bill
+  return period.bill
+}
+function effectivePeriodShowBill (period, pi) {
+  if (props.calculatorMode === 'dateToDate') return d2dBillState.value[pi]?.showBill ?? period.showBill
+  return period.showBill
+}
+
+async function recalcD2dOpenPeriodBill (pi) {
+  if (props.calculatorMode !== 'dateToDate' || mode.value !== 'test') return
+  await nextTick()
+  const period = activePeriods.value[pi]
+  if (!period?.water || !canCalcPeriod(period, pi)) return
+  await calcPeriod(pi)
+  const updated = activePeriods.value[pi]
+  if (updated?.bill) {
+    const wasShowing = d2dBillState.value[pi]?.showBill
+    d2dBillState.value[pi] = { bill: updated.bill, showBill: wasShowing ?? true }
+  }
+}
+
+async function viewBillClick (period, pi) {
+  if (props.calculatorMode === 'dateToDate') {
+    const state = d2dBillState.value[pi]
+    if (state?.bill) {
+      state.showBill = !state.showBill
+      return
+    }
+    if (canCalcPeriod(period, pi) && !period.calculating) {
+      await calcPeriod(pi)
+      if (period.bill) {
+        d2dBillState.value[pi] = { bill: period.bill, showBill: true }
+      }
+    }
+    return
+  }
+  if (period.bill) {
+    period.showBill = !period.showBill
+    return
+  }
+  if (canCalcPeriod(period, pi) && !period.calculating) {
+    await calcPeriod(pi)
+    if (period.bill) period.showBill = true
+  }
 }
 
 async function computePeriodBill (period, tariffId, accountId = null) {
@@ -1620,6 +1781,21 @@ function onUserChange () {
   ua.value.accountId = ''; ua.value.accountData = null; ua.value.periods = []
 }
 
+function buildD2dPeriodsFromAccountData (data) {
+  const waterMeter = (data.meters || []).find(m => m.meter_type === 'water')
+  if (!waterMeter || !waterMeter.readings || waterMeter.readings.length === 0) return []
+  const sorted = [...waterMeter.readings].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+  const first = sorted[0]
+  const val = Number(first.value ?? 0)
+  const anchorLitres = (val >= 1000 && Number.isInteger(val)) ? Math.round(val) : Math.round(val * 1000)
+  const rest = sorted.slice(1).map(r => {
+    const v = Number(r.value ?? 0)
+    const litres = (v >= 1000 && Number.isInteger(v)) ? Math.round(v) : Math.round(v * 1000)
+    return { date: r.date, litres, value: v }
+  })
+  return buildD2dPeriodsFromAnchorReadings(first.date, anchorLitres, rest)
+}
+
 async function loadAccount () {
   if (!ua.value.accountId) return
   ua.value.loading = true; ua.value.accountData = null; ua.value.periods = []; ua.value.activeMeterTab = 'water'
@@ -1627,8 +1803,10 @@ async function loadAccount () {
     const res = await apiFetch(`/admin/calculator/account/${ua.value.accountId}`)
     if (res.success) {
       ua.value.accountData = res.data
-      ua.value.periods     = buildPeriodsFromAccountData(res.data)
-      await runCalculationCascade(ua.value.periods)
+      ua.value.periods     = props.calculatorMode === 'dateToDate'
+        ? buildD2dPeriodsFromAccountData(res.data)
+        : buildPeriodsFromAccountData(res.data)
+      if (props.calculatorMode !== 'dateToDate') await runCalculationCascade(ua.value.periods)
     }
   } catch { /* ignore */ }
   finally { ua.value.loading = false }
@@ -1738,12 +1916,117 @@ async function runCalculationCascade (periods) {
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
-const activePeriods = computed(() =>
-  mode.value === 'test' ? test.value.periods : ua.value.periods
-)
-const effectiveTemplateId = computed(() =>
-  mode.value === 'test' ? test.value.templateId : (ua.value.accountData?.tariff?.id ?? '')
-)
+// Date-to-Date: build periods from anchor + readings (period closes when reading >= 30 days from anchor)
+// today: optional YYYY-MM-DD so open period date picker allows up to today
+function buildD2dPeriodsFromAnchorReadings (anchorDate, anchorLitres, readings, today) {
+  const sorted = [...(readings || [])].filter(r => r.date && (r.litres ?? r.value ?? 0) >= 0).sort((a, b) => a.date.localeCompare(b.date))
+  const periods = []
+  let anchor = { date: anchorDate, litres: Math.round(Number(anchorLitres || 0)) }
+  let periodReadings = []
+
+  for (const r of sorted) {
+    const litres = Math.round(Number(r.litres ?? r.value ?? 0))
+    const daysFromAnchor = blockDays(anchor.date, r.date)
+    if (daysFromAnchor >= D2D_MIN_DAYS) {
+      periodReadings.push({ date: r.date, litres, klStr: (litres / 1000).toFixed(2), error: '' })
+      const start = anchor.date
+      const end = r.date
+      const sectorInput = [
+        { reading_date: anchor.date, reading_value: anchor.litres },
+        ...periodReadings.map(x => ({ reading_date: x.date, reading_value: x.litres })),
+      ]
+      const sectors = buildSectors(sectorInput)
+      const usage = Math.max(0, litres - anchor.litres)
+      const bd = blockDays(start, end)
+      const dailyUsage = bd > 0 ? Math.round(usage / bd) : 0
+      periods.push({
+        start,
+        end,
+        blockDays: bd,
+        expanded: periods.length === 0,
+        water: {
+          openingLitres: anchor.litres,
+          openingDate: anchor.date,
+          readings: periodReadings.map(x => ({ ...x })),
+          sectors,
+          dailyUsage,
+          provisionalClosingLitres: litres,
+          calculatedClosingLitres: litres,
+          stats: null,
+          adjustmentBroughtForward: 0,
+          insufficientData: false,
+        },
+        electricity: null,
+        showBill: false,
+        calculating: false,
+        calcError: '',
+        bill: null,
+        closed: true,
+      })
+      anchor = { date: r.date, litres }
+      periodReadings = []
+    } else {
+      periodReadings.push({ date: r.date, litres, klStr: (litres / 1000).toFixed(2), error: '' })
+    }
+  }
+  if (periodReadings.length > 0 || periods.length === 0) {
+    const start = anchor.date
+    const lastR = periodReadings[periodReadings.length - 1]
+    let end = lastR ? lastR.date : start
+    if (typeof today === 'string' && today) end = end < today ? today : end
+    const sectorInput = [
+      { reading_date: anchor.date, reading_value: anchor.litres },
+      ...periodReadings.map(x => ({ reading_date: x.date, reading_value: x.litres })),
+    ]
+    const sectors = sectorInput.length >= 2 ? buildSectors(sectorInput) : []
+    const lastLitres = lastR ? lastR.litres : anchor.litres
+    const usage = Math.max(0, lastLitres - anchor.litres)
+    const bd = blockDays(start, end)
+    const dailyUsage = bd > 0 ? Math.round(usage / bd) : 0
+    const d2dReadingsStartIndex = sorted.length - periodReadings.length
+    periods.push({
+      start,
+      end,
+      blockDays: bd,
+      expanded: true,
+      d2dReadingsStartIndex,
+      water: {
+        openingLitres: anchor.litres,
+        openingDate: anchor.date,
+        readings: periodReadings,
+        sectors,
+        dailyUsage,
+        provisionalClosingLitres: lastLitres,
+        calculatedClosingLitres: lastLitres,
+        stats: null,
+        adjustmentBroughtForward: 0,
+        insufficientData: false,
+      },
+      electricity: null,
+      showBill: false,
+      calculating: false,
+      calcError: '',
+      bill: null,
+      closed: false,
+    })
+  }
+  return periods
+}
+
+const d2dPeriods = computed(() => {
+  if (props.calculatorMode !== 'dateToDate' || mode.value !== 'test') return []
+  if (!d2d.value.anchorDate) return []
+  return buildD2dPeriodsFromAnchorReadings(d2d.value.anchorDate, d2d.value.anchorLitres, d2d.value.readings, props.today)
+})
+
+const activePeriods = computed(() => {
+  if (props.calculatorMode === 'dateToDate' && mode.value === 'test') return d2dPeriods.value
+  return mode.value === 'test' ? test.value.periods : ua.value.periods
+})
+const effectiveTemplateId = computed(() => {
+  if (props.calculatorMode === 'dateToDate' && mode.value === 'test') return d2d.value.templateId
+  return mode.value === 'test' ? test.value.templateId : (ua.value.accountData?.tariff?.id ?? '')
+})
 
 function activeMeter (_period) {
   if (mode.value === 'test') return test.value.activeMeterTab || 'water'
@@ -1969,6 +2252,8 @@ recomputeTestPeriod()
 .r-kl-display   { font-family: 'Courier New', monospace; font-size: 0.88rem; font-weight: 700; color: #3294B8; }
 .btn-rm { background: none; border: none; color: #e53e3e; font-size: 0.88rem; cursor: pointer; padding: 0.1rem 0.3rem; }
 .empty-readings { font-size: 0.82rem; color: #a0aec0; font-style: italic; padding: 0.25rem 0; }
+.btn-add-reading { margin-top: 0.5rem; padding: 0.4rem 0.75rem; background: #e2e8f0; border: 1px solid #cbd5e0; border-radius: 6px; cursor: pointer; font-size: 0.88rem; }
+.btn-add-reading:hover { background: #cbd5e0; }
 .insufficient-data-notice { display: flex; align-items: flex-start; gap: 0.6rem; background: #fffbeb; border: 1px solid #f6d860; border-radius: 8px; padding: 0.75rem 1rem; margin: 0.75rem 0; color: #92400e; font-size: 0.88rem; font-weight: 500; }
 .insufficient-data-notice .fas { color: #d97706; margin-top: 0.1rem; flex-shrink: 0; }
 
@@ -2069,6 +2354,9 @@ recomputeTestPeriod()
 .adj-reason i { color: #fbd38d; }
 .bill-meter-consumption  { font-size: 0.72rem; font-weight: 600; color: #718096; margin-left: auto; font-family: 'Courier New', monospace; }
 
+.bill-daily-consumption { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.9rem; }
+.bill-daily-label { font-weight: 600; color: rgba(255,255,255,0.75); }
+.bill-daily-val  { font-weight: 800; color: #fff; }
 .bill-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem; }
 .bill-stat { flex: 1; min-width: 120px; padding: 0.65rem 0.85rem; background: rgba(255,255,255,.05); border: 1px solid rgba(176,211,223,.15); border-radius: 7px; }
 .bill-stat-label { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #B0D3DF; }

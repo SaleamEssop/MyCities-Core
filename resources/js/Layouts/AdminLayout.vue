@@ -12,10 +12,35 @@
       
       <!-- Nav Items -->
       <nav class="nav flex-column">
-        <template v-for="item in menuItems" :key="item.route">
+        <template v-for="(item, idx) in menuItems" :key="item.route || item.label + String(idx)">
+          <!-- Parent with dropdown children -->
+          <div v-if="item.children" class="nav-dropdown">
+            <button
+              type="button"
+              class="nav-item nav-item-toggle"
+              :class="{ 'active': isActiveChild(item.children) }"
+              @click="toggleCalculator = !toggleCalculator"
+              aria-expanded="false"
+            >
+              <i :class="item.icon"></i>
+              <span>{{ item.label }}</span>
+              <i class="fas fa-fw fa-chevron-down nav-chevron" :class="{ 'nav-chevron--open': toggleCalculator }"></i>
+            </button>
+            <div v-show="toggleCalculator" class="nav-dropdown-children">
+              <Link
+                v-for="ch in item.children"
+                :key="ch.route"
+                :href="route(ch.route)"
+                class="nav-item nav-item-child"
+                :class="{ 'active': isActive(ch.routes) }"
+              >
+                <span>{{ ch.label }}</span>
+              </Link>
+            </div>
+          </div>
           <!-- External link (opens in new tab) -->
           <a
-            v-if="item.external"
+            v-else-if="item.external"
             :href="route(item.route)"
             target="_blank"
             rel="noopener noreferrer"
@@ -97,11 +122,17 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 
 const page = usePage()
 const sidebarCollapsed = ref(false)
+const toggleCalculator = ref(false)
+watch(
+  () => page.props.ziggy?.current,
+  (r) => { if (r === 'calculator' || r === 'calculator.date-to-date') toggleCalculator.value = true },
+  { immediate: true }
+)
 
 const user = computed(() => page.props.auth?.user)
 
@@ -115,7 +146,15 @@ const menuItems = [
   { label: 'Pages', icon: 'fas fa-fw fa-file-alt', route: 'pages-list', routes: ['pages-list', 'pages-create'] },
   { label: 'Advertising', icon: 'fas fa-fw fa-ad', route: 'ads-list', routes: ['ads-list', 'ads-categories'] },
   { label: 'App View', icon: 'fas fa-fw fa-mobile-alt', route: 'app-view', routes: ['app-view'] },
-  { label: 'Calculator', icon: 'fas fa-fw fa-calculator', route: 'calculator', routes: ['calculator'] },
+  {
+    label: 'Calculator',
+    icon: 'fas fa-fw fa-calculator',
+    route: 'calculator',
+    children: [
+      { label: 'Period to Period', route: 'calculator', routes: ['calculator'] },
+      { label: 'Date to Date', route: 'calculator.date-to-date', routes: ['calculator.date-to-date'] },
+    ],
+  },
   { label: 'Alarms', icon: 'fas fa-fw fa-clock', route: 'alarms', routes: ['alarms'] },
   { label: 'Administrators', icon: 'fas fa-fw fa-user-shield', route: 'administrators.index', routes: ['administrators.index'] },
   { label: 'Settings', icon: 'fas fa-fw fa-cog', route: 'settings.index', routes: ['settings.index'] },
@@ -123,7 +162,11 @@ const menuItems = [
 
 const isActive = (routes) => {
   const currentRoute = page.props.ziggy?.current
-  return routes.includes(currentRoute)
+  return routes && currentRoute && routes.includes(currentRoute)
+}
+
+const isActiveChild = (children) => {
+  return children && children.some(ch => isActive(ch.routes))
 }
 </script>
 
@@ -204,6 +247,36 @@ const isActive = (routes) => {
   font-size: 0.6rem;
   opacity: 0.5;
   width: auto;
+}
+
+.nav-dropdown {
+  display: flex;
+  flex-direction: column;
+}
+.nav-item-toggle {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  font: inherit;
+}
+.nav-chevron {
+  margin-left: auto;
+  margin-right: 0;
+  transition: transform 0.2s;
+}
+.nav-chevron--open {
+  transform: rotate(180deg);
+}
+.nav-dropdown-children {
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.15);
+  padding-left: 0.5rem;
+}
+.nav-item-child {
+  padding-left: 2rem;
+  font-size: 0.9rem;
 }
 
 /* Content Wrapper */

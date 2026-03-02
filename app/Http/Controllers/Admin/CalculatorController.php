@@ -37,12 +37,56 @@ class CalculatorController extends Controller
                 'id'             => $u->id,
                 'name'           => $u->name,
                 'email'          => $u->email,
-                'contact_number' => $u->contact_number,
+                'contact_number' => $u->contact_number ?? '',
                 'accounts'       => $accounts->values(),
             ];
         })->filter(fn ($u) => count($u['accounts']) > 0)->values();
 
-        $templates = RegionsAccountTypeCost::with('region')
+        $templates = $this->getTariffTemplatesForCalculator();
+
+        return Inertia::render('Admin/Calculator', [
+            'users'            => $users,
+            'tariffTemplates'  => $templates,
+            'today'            => now('Africa/Johannesburg')->format('Y-m-d'),
+            'calculatorMode'   => 'period',
+        ]);
+    }
+
+    /**
+     * Date-to-Date calculator: same Calculator.vue with calculatorMode=dateToDate.
+     * Period = from anchor until first reading >= 30 days; then that reading becomes next anchor.
+     */
+    public function dateToDate(): Response
+    {
+        $users = User::orderBy('name')->get()->map(function ($u) {
+            $accounts = Account::where('user_id', $u->id)
+                ->select('id', 'user_id', 'account_name', 'account_number', 'bill_day', 'tariff_template_id')
+                ->get();
+            return [
+                'id'             => $u->id,
+                'name'           => $u->name,
+                'email'          => $u->email,
+                'contact_number' => $u->contact_number ?? '',
+                'accounts'       => $accounts->values(),
+            ];
+        })->filter(fn ($u) => count($u['accounts']) > 0)->values();
+
+        $templates = $this->getTariffTemplatesForCalculator();
+
+        return Inertia::render('Admin/Calculator', [
+            'users'            => $users,
+            'tariffTemplates'  => $templates,
+            'today'            => now('Africa/Johannesburg')->format('Y-m-d'),
+            'calculatorMode'   => 'dateToDate',
+        ]);
+    }
+
+    /**
+     * Tariff templates with billing_type for calculator (period vs date-to-date).
+     */
+    private function getTariffTemplatesForCalculator(): \Illuminate\Support\Collection
+    {
+        return RegionsAccountTypeCost::with('region')
             ->where(fn ($q) => $q->where('is_water', 1)->orWhere('is_electricity', 1))
             ->whereNotNull('template_name')
             ->where('template_name', '!=', '')
@@ -53,16 +97,11 @@ class CalculatorController extends Controller
                 'name'           => $t->template_name,
                 'region_name'    => $t->region?->name,
                 'billing_day'    => $t->billing_day,
+                'billing_type'   => $t->billing_type ?? 'MONTHLY',
                 'vat_rate'       => $t->vat_percentage ?? $t->vat_rate ?? 15,
                 'is_water'       => (bool) $t->is_water,
                 'is_electricity' => (bool) $t->is_electricity,
             ]);
-
-        return Inertia::render('Admin/Calculator', [
-            'users'           => $users,
-            'tariffTemplates' => $templates,
-            'today'           => now('Africa/Johannesburg')->format('Y-m-d'),
-        ]);
     }
 
     // ── Compute full period (existing — requires bill_id in DB) ───────────────
