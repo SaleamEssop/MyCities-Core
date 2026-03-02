@@ -380,20 +380,13 @@ final class Calculator
     // =========================================================================
 
     /**
-     * Apply tiered rates to integer usage. Returns usage_charge (float, 2 dp)
+     * Apply tiered rates to a consumption value. Returns usage_charge (float, 2 dp)
      * and a per-tier breakdown for the bills.tier_breakdown JSON column.
      *
-     * @param int   $usageL integer Litres or Wh
-     * @param array $tiers  from loadTierDefinitions()
-     * @return array{usage_charge: float, tier_breakdown: array}
-     */
-    /**
-     * Apply tiered rates to a consumption value.
-     *
      * @param int   $usageUnits   Consumption in base units (litres for water, kWh for electricity).
-     * @param array $tiers        Tier definitions (min_units / max_units in the same base unit as $usageUnits).
-     * @param bool  $rawUnits     When true (electricity), units are NOT divided by 1000 before applying the rate.
-     *                            When false (water, default), units are converted L → kL ( ÷ 1000) before rate.
+     * @param array $tiers        Tier definitions from loadTierDefinitions() (min_units / max_units in same unit as $usageUnits).
+     * @param bool  $rawUnits     When true (electricity), units are NOT divided by 1000. When false (water), L → kL (÷1000) before rate.
+     * @return array{usage_charge: float, tier_breakdown: array}
      */
     public function applyTieredRates(int $usageUnits, array $tiers, bool $rawUnits = false): array
     {

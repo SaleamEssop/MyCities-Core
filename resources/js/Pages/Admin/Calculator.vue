@@ -324,8 +324,8 @@
                 <template v-else>
                   <div v-for="r in period.water.readings" :key="r.id" class="reading-row">
                     <span class="r-date-display">{{ fmt(r.date) }}</span>
-                    <span class="r-kl-display">{{ litresToKlStr(r.value) }} kL</span>
-                    <span class="r-litres-display">{{ fmtN(r.value) }} L</span>
+                    <span class="r-kl-display">{{ litresToKlStr(r.litres ?? Math.round((r.value ?? 0) * 1000)) }} kL</span>
+                    <span class="r-litres-display">{{ fmtN(r.litres ?? Math.round((r.value ?? 0) * 1000)) }} L</span>
                   </div>
                   <div v-if="period.water.readings.length === 0" class="empty-readings">No intra-period readings.</div>
                 </template>
@@ -971,7 +971,8 @@ function makeElecMeter (kwh, date) {
 
 // Check whether a meter type has been initialized in period[0..pi]
 function isMeterInitialized (pi, meterType) {
-  return test.value.periods.slice(0, pi + 1).some(p => p[meterType] !== null)
+  if (mode.value === 'account') return true
+  return activePeriods.value.slice(0, pi + 1).some(p => p[meterType] !== null)
 }
 
 // Confirm initialization of a meter for a specific period
@@ -1146,12 +1147,14 @@ function recomputePeriodWater (period, pi) {
 
   if (valid.length === 0) {
     w.sectors = []; w.dailyUsage = w.inheritedDailyUsage ?? null
+    w.insufficientData = !(w.inheritedDailyUsage != null && w.inheritedDailyUsage > 0)
     // Close provisionally with opening (0 or inherited) — subject to reconciliation when 2nd reading is obtained
     w.provisionalClosingLitres = w.inheritedDailyUsage != null && w.inheritedDailyUsage > 0
       ? Math.round(w.openingLitres + w.inheritedDailyUsage * period.blockDays)
       : w.openingLitres
     return
   }
+  w.insufficientData = false
 
   let prevLitres = w.openingLitres
   for (const r of valid) {
@@ -1161,11 +1164,13 @@ function recomputePeriodWater (period, pi) {
   const sequential = valid.filter(r => !r.error)
   if (!sequential.length) {
     w.sectors = []; w.dailyUsage = w.inheritedDailyUsage ?? null
+    w.insufficientData = !(w.inheritedDailyUsage != null && w.inheritedDailyUsage > 0)
     w.provisionalClosingLitres = w.inheritedDailyUsage != null && w.inheritedDailyUsage > 0
       ? Math.round(w.openingLitres + w.inheritedDailyUsage * period.blockDays)
       : w.openingLitres
     return
   }
+  w.insufficientData = false
 
   const sectorInput = [
     { reading_date: w.openingDate, reading_value: w.openingLitres },
@@ -1188,12 +1193,13 @@ function recomputePeriodWater (period, pi) {
 }
 
 function propagateMomentumWater (fromPi) {
-  for (let k = fromPi + 1; k < test.value.periods.length; k++) {
-    const p = test.value.periods[k]
+  const periods = activePeriods.value
+  for (let k = fromPi + 1; k < periods.length; k++) {
+    const p = periods[k]
     const pw = p.water
     if (!pw) break
-    if (pw.readings.filter(r => r.litres > 0).length > 0) break
-    pw.inheritedDailyUsage = test.value.periods[k - 1].water?.dailyUsage ?? null
+    if (pw.readings.filter(r => (r.litres ?? r.value ?? 0) > 0).length > 0) break
+    pw.inheritedDailyUsage = periods[k - 1].water?.dailyUsage ?? null
     if (pw.inheritedDailyUsage != null && pw.inheritedDailyUsage > 0) {
       pw.dailyUsage             = pw.inheritedDailyUsage
       pw.provisionalClosingLitres = Math.round(pw.openingLitres + pw.inheritedDailyUsage * p.blockDays)
@@ -1204,25 +1210,30 @@ function propagateMomentumWater (fromPi) {
 // ── Straddle reconciliation (water only) ─────────────────────────────────────
 async function reconcileStraddleWater (pi) {
   if (pi === 0) return
-  const currP  = test.value.periods[pi]
+  const periods = activePeriods.value
+  const currP  = periods[pi]
   const currW  = currP.water
   if (!currW) return
 
   const currReadings = currW.readings
-    .filter(r => r.date && r.litres > 0)
+    .filter(r => r.date && (r.litres ?? r.value ?? 0) > 0)
     .sort((a, b) => a.date.localeCompare(b.date))
   if (!currReadings.length) return
 
   const rightAnchor = currReadings[0]
+  const rightLitres = rightAnchor.litres ?? Math.round((rightAnchor.value ?? 0) * 1000)
+  // Only reconcile when consumption spans from a previous period into this one.
+  // If the first reading is on or before period start, it closes the previous period — do not overwrite this period's opening.
+  if (rightAnchor.date <= currP.start) return
 
   let leftPeriodIdx = -1
   let leftAnchor    = null
   for (let k = pi - 1; k >= 0; k--) {
-    const p = test.value.periods[k]
+    const p = periods[k]
     const pw = p.water
     if (!pw) continue
     const pReadings = pw.readings
-      .filter(r => r.date && r.litres > 0)
+      .filter(r => r.date && (r.litres ?? r.value ?? 0) > 0)
       .sort((a, b) => a.date.localeCompare(b.date))
     if (pReadings.length > 0) {
       leftPeriodIdx = k; leftAnchor = pReadings[pReadings.length - 1]; break
@@ -1233,16 +1244,20 @@ async function reconcileStraddleWater (pi) {
   }
   if (leftAnchor === null) return
 
-  const totalUsage = rightAnchor.litres - leftAnchor.litres
+  const leftLitres = leftAnchor.litres ?? Math.round((leftAnchor.value ?? 0) * 1000)
+  const totalUsage = rightLitres - leftLitres
   if (totalUsage < 0) return
 
-  // Use full period block days per period (opening is anchor; allocation by period length).
+  // PD 3.0: Straddle split includes all sub-segments (previous periods + current period's segment to right anchor).
   const slices = []
   for (let k = leftPeriodIdx; k <= pi - 1; k++) {
-    const p = test.value.periods[k]
+    const p = periods[k]
     const sliceDays = p.blockDays ?? blockDays(p.start, p.end)
     slices.push({ k, p, sliceDays })
   }
+  const currSegmentDays = blockDays(currP.start, rightAnchor.date)
+  if (currSegmentDays > 0) slices.push({ k: pi, p: currP, sliceDays: currSegmentDays })
+
   const totalDays = slices.reduce((sum, s) => sum + s.sliceDays, 0)
   if (totalDays <= 0) return
 
@@ -1258,9 +1273,10 @@ async function reconcileStraddleWater (pi) {
     r++
   }
 
-  let prevClosing = leftAnchor.litres
+  let prevClosing = leftLitres
   for (let idx = 0; idx < slices.length; idx++) {
     const { k, p } = slices[idx]
+    if (k === pi) continue
     const pw = p.water
     if (!pw) continue
     if (k > leftPeriodIdx) { pw.openingLitres = prevClosing; pw.openingDate = p.start }
@@ -1273,9 +1289,9 @@ async function reconcileStraddleWater (pi) {
   currW.openingLitres = prevClosing
   currW.openingDate   = currP.start
 
-  if (!test.value.templateId) return
-  const tid = parseInt(test.value.templateId)
-  const provisionalSlices = slices.filter(s => s.p.water?.provisionalClosingSnapshot != null)
+  const tid = parseInt(effectiveTemplateId.value)
+  if (!tid) return
+  const provisionalSlices = slices.filter(s => s.k < pi && s.p.water?.provisionalClosingSnapshot != null)
   if (!provisionalSlices.length) { currW.adjustmentBroughtForward = 0; return }
 
   const details = await Promise.all(provisionalSlices.map(async ({ k, p }) => {
@@ -1327,11 +1343,13 @@ function recomputePeriodElec (period, pi) {
 
   if (valid.length === 0) {
     e.sectors = []; e.dailyUsage = e.inheritedDailyUsage ?? null
+    e.insufficientData = !(e.inheritedDailyUsage != null && e.inheritedDailyUsage > 0)
     e.provisionalClosingKwh = e.inheritedDailyUsage != null && e.inheritedDailyUsage > 0
       ? Math.round(e.openingKwh + e.inheritedDailyUsage * period.blockDays)
       : e.openingKwh
     return
   }
+  e.insufficientData = false
 
   let prevKwh = e.openingKwh
   for (const r of valid) {
@@ -1341,11 +1359,13 @@ function recomputePeriodElec (period, pi) {
   const sequential = valid.filter(r => !r.error)
   if (!sequential.length) {
     e.sectors = []; e.dailyUsage = e.inheritedDailyUsage ?? null
+    e.insufficientData = !(e.inheritedDailyUsage != null && e.inheritedDailyUsage > 0)
     e.provisionalClosingKwh = e.inheritedDailyUsage != null && e.inheritedDailyUsage > 0
       ? Math.round(e.openingKwh + e.inheritedDailyUsage * period.blockDays)
       : e.openingKwh
     return
   }
+  e.insufficientData = false
 
   const sectorInput = [
     { reading_date: e.openingDate, reading_value: e.openingKwh },
@@ -1460,7 +1480,13 @@ async function computePeriodBill (period, tariffId, accountId = null) {
 
       // Bill consumption: best available closing (calculated → provisional → last reading)
       const billClosing     = w.calculatedClosingLitres ?? w.provisionalClosingLitres ?? lastValue
-      const billConsumption = Math.max(0, Math.round(billClosing - openV))
+      let billConsumption   = Math.max(0, Math.round(billClosing - openV))
+
+      // When actual is 0 but we have momentum, use projected consumption for the usage charge (current period still billed on projection)
+      if (billConsumption === 0 && (w.inheritedDailyUsage ?? w.dailyUsage ?? 0) > 0) {
+        const momentumL = w.inheritedDailyUsage ?? w.dailyUsage ?? 0
+        billConsumption = Math.round(momentumL * (period.blockDays ?? 0))
+      }
 
       // Projected: provisional closing extrapolated to full period
       const projClosing     = w.provisionalClosingLitres ?? billClosing
@@ -1601,7 +1627,8 @@ async function loadAccount () {
     const res = await apiFetch(`/admin/calculator/account/${ua.value.accountId}`)
     if (res.success) {
       ua.value.accountData = res.data
-      ua.value.periods     = reconstructPeriods(res.data)
+      ua.value.periods     = buildPeriodsFromAccountData(res.data)
+      await runCalculationCascade(ua.value.periods)
     }
   } catch { /* ignore */ }
   finally { ua.value.loading = false }
@@ -1625,16 +1652,18 @@ function uaPeriodEnd (startStr, billDay) {
   return localDateStr(nxS)
 }
 
-function reconstructPeriods (data) {
+// Build period list from account API data using the same shape as Test mode.
+// Does not compute sectors/closing — the shared cascade (recompute + reconcile) does that.
+function buildPeriodsFromAccountData (data) {
   const { account, meters } = data
   const billDay = account.bill_day || 1
   const today   = props.today || localDateStr(new Date())
 
-  // Find the earliest initialization reading across all meters
   let earliest = null
   for (const m of meters) {
     if (m.readings.length > 0) {
-      if (!earliest || m.readings[0].date < earliest) earliest = m.readings[0].date
+      const first = m.readings[0].date
+      if (!earliest || first < earliest) earliest = first
     }
   }
   if (!earliest) return []
@@ -1642,133 +1671,77 @@ function reconstructPeriods (data) {
   const firstStart = uaPeriodStart(earliest, billDay)
   const periods    = []
   let   curStart   = firstStart
-
-  // Per-meter chained state: opening value/date/dailyUsage carries forward from
-  // each period's close into the next period's open. This mirrors exactly how
-  // test mode chains periods — no DB lookup for openings after Period 1.
   const meterState = {}
   for (const m of meters) {
     const initReading = m.readings.filter(r => r.date <= firstStart).slice(-1)[0] ?? null
-    meterState[m.id] = initReading
-      ? { value: initReading.value, date: initReading.date, dailyUsage: null }
-      : null
+    meterState[m.id] = initReading ? { value: initReading.value, date: initReading.date } : null
   }
 
   while (curStart <= today) {
-    const end       = uaPeriodEnd(curStart, billDay)
-    const nextStart = nextDay(end)
-
+    const end = uaPeriodEnd(curStart, billDay)
     const period = {
       start: curStart, end, blockDays: blockDays(curStart, end),
-      expanded: false,
-      water: null, electricity: null,
-      showBill: false,
-      calculating: false, calcError: '', bill: null,
+      expanded: false, water: null, electricity: null,
+      showBill: false, calculating: false, calcError: '', bill: null,
     }
 
     for (const m of meters) {
       const opening = meterState[m.id]
       if (!opening) continue
 
-      // Intra-period readings: date falls within [curStart, end].
-      // For the very first period, exclude the initialization reading itself
-      // (it is the opening anchor, not a consumption event).
-      const isFirstPeriod = curStart === firstStart
-      const periodReadings = m.readings.filter(r => {
-        if (isFirstPeriod && r.date <= opening.date) return false
-        return r.date >= curStart && r.date <= end
-      })
+      const periodReadings = m.readings.filter(r => r.date >= curStart && r.date <= end)
 
-      let sectors          = []
-      let provisionalClosing = null
-      let calculatedClosing  = null
-      let dailyUsage         = opening.dailyUsage   // inherit momentum from previous period
-      let insufficientData   = false
-
-      if (periodReadings.length > 0) {
-        // Build sectors using the chained opening as the anchor point.
-        // Opening date may predate curStart when a prior period had no readings —
-        // the sector will correctly span across that gap.
-        const sectorInput = [
-          { reading_date: opening.date, reading_value: opening.value },
-          ...periodReadings.map(r => ({ reading_date: r.date, reading_value: r.value })),
-        ]
-        sectors = buildSectors(sectorInput)
-        const last     = periodReadings[periodReadings.length - 1]
-        const usage    = last.value - opening.value
-        const daysSpan = blockDays(opening.date, last.date)
-        if (daysSpan > 0 && usage >= 0) {
-          dailyUsage         = Math.round(usage / daysSpan)
-          provisionalClosing = Math.round(opening.value + dailyUsage * period.blockDays)
-          if (last.date === end) {
-            calculatedClosing  = last.value
-            provisionalClosing = last.value
-          }
-        }
-      } else if (dailyUsage != null && dailyUsage > 0) {
-        // No readings this period — project forward using inherited momentum
-        provisionalClosing = Math.round(opening.value + dailyUsage * period.blockDays)
-      } else {
-        // No readings and no momentum: calculation is impossible.
-        // Requires at least two readings to establish a consumption rate.
-        insufficientData = true
-      }
-
-      // Advance the chained state for the next period.
-      // Only advance the anchor DATE when a closing was computed — if no close
-      // exists (insufficientData), preserve the original opening date so the next
-      // period that receives a reading measures the correct span from the real anchor.
-      meterState[m.id] = {
-        value:      provisionalClosing ?? opening.value,
-        date:       provisionalClosing != null ? end : opening.date,
-        dailyUsage,
-      }
-
+      // Shared shape: same as Test mode so recomputePeriodWater/Elec work unchanged.
+      // API water value in kL, electricity in kWh.
       if (m.meter_type === 'water') {
-        period.water = {
-          openingLitres:               opening.value,
-          openingDate:                 opening.date,
-          readings:                    periodReadings,
-          sectors,
-          provisionalClosingLitres:    provisionalClosing,
-          calculatedClosingLitres:     calculatedClosing,
-          provisionalClosingSnapshot:  null,
-          provisionalBillR:            null,
-          calculatedBillR:             null,
-          adjustmentBroughtForward:    0,
-          adjustmentDetail:            null,
-          inheritedDailyUsage:         null,
-          dailyUsage,
-          insufficientData,
-          stats:                       null,
-        }
+        const openingLitres = Math.round((opening.value ?? 0) * 1000)
+        period.water = makeWaterMeter(openingLitres, opening.date)
+        period.water.readings = periodReadings.map(r => {
+          const val = Number(r.value ?? 0)
+          const litres = Math.round(val * 1000)
+          return { id: r.id, date: r.date, value: val, klStr: val.toFixed(2), litres, error: '' }
+        })
       } else if (m.meter_type === 'electricity') {
-        period.electricity = {
-          openingKwh:              opening.value,
-          openingDate:             opening.date,
-          readings:                periodReadings,
-          sectors,
-          provisionalClosingKwh:   provisionalClosing,
-          calculatedClosingKwh:    calculatedClosing,
-          dailyUsage,
-          insufficientData,
-          adjustmentBroughtForward: 0,
-          stats:                   null,
-        }
+        const openingKwh = Math.round(opening.value ?? 0)
+        period.electricity = makeElecMeter(openingKwh, opening.date)
+        period.electricity.readings = periodReadings.map(r => {
+          const val = Math.round(Number(r.value ?? 0))
+          return { id: r.id, date: r.date, value: val, kwh: String(val).padStart(6, '0'), kwhInt: val, error: '' }
+        })
       }
+
+      const last = periodReadings[periodReadings.length - 1]
+      meterState[m.id] = last
+        ? { value: last.value, date: end }
+        : { value: opening.value, date: opening.date }
     }
 
     if (period.water || period.electricity) periods.push(period)
-    curStart = nextStart
+    curStart = nextDay(end)
   }
 
   if (periods.length) periods[periods.length - 1].expanded = true
   return periods
 }
 
+// Run the same calculation cascade as Test mode (single logic base).
+async function runCalculationCascade (periods) {
+  for (let pi = 0; pi < periods.length; pi++) {
+    if (periods[pi].water) recomputePeriodWater(periods[pi], pi)
+    if (periods[pi].electricity) recomputePeriodElec(periods[pi], pi)
+  }
+  for (let pi = 1; pi < periods.length; pi++) {
+    await reconcileStraddleWater(pi)
+    if (periods[pi].water) recomputePeriodWater(periods[pi], pi)
+  }
+}
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 const activePeriods = computed(() =>
   mode.value === 'test' ? test.value.periods : ua.value.periods
+)
+const effectiveTemplateId = computed(() =>
+  mode.value === 'test' ? test.value.templateId : (ua.value.accountData?.tariff?.id ?? '')
 )
 
 function activeMeter (_period) {

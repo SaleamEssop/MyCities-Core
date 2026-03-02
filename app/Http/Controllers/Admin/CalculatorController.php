@@ -86,20 +86,12 @@ class CalculatorController extends Controller
     /**
      * POST /admin/calculator/compute-charge
      *
-     * Given consumption_litres and a tariff_template_id, return the full
-     * monetary breakdown (tiers, fixed costs, customer overrides, VAT, total).
-     * This is purely stateless — no bill record is read or written.
-     */
-    /**
-     * POST /admin/calculator/compute-charge
+     * Stateless monetary breakdown for a given consumption (tiers, fixed costs,
+     * customer overrides, VAT, total). No bill record is read or written.
      *
-     * Stateless monetary breakdown for a given consumption.
-     *
-     * Extra params:
-     *   consumption_unit  – 'litres' (default) | 'kwh'
-     *                       When 'kwh', no ÷1000 conversion is applied in tier maths.
-     *   include_fixed     – true (default) | false
-     *                       Set false for electricity to avoid double-counting shared fixed costs.
+     * Params: tariff_template_id, consumption_litres; optional account_id.
+     *   consumption_unit – 'litres' (default) | 'kwh' (no ÷1000 in tier maths).
+     *   include_fixed    – true (default) | false (e.g. electricity to avoid double-counting fixed).
      */
     public function computeCharge(Request $request): JsonResponse
     {
@@ -508,7 +500,6 @@ class CalculatorController extends Controller
      * POST /admin/calculator/calculate-periods
      *
      * Returns all billing periods for an account based on its reading date span.
-     * Replaces the old BillingCalculatorController::calculatePeriods().
      */
     public function calculatePeriods(Request $request): JsonResponse
     {
