@@ -8,9 +8,6 @@ use App\Models\Bill;
 use App\Models\AdminAction;
 use App\Models\Meter;
 use App\Models\Account;
-// LEGACY DECOUPLING: Commented out - services moved to LegacyQuarantine
-// use App\Services\BillingEngine;
-// use App\Services\BillingPeriodCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -158,9 +155,7 @@ class AdminReadingsController extends Controller
                     
                     if ($allReadings->count() >= 2) {
                         // Regenerate bills for all reading pairs
-                        // Use dependency injection to get services
                         $billingEngine = app(BillingEngine::class);
-                        $periodCalculator = app(BillingPeriodCalculator::class);
                         $tariff = $account->tariffTemplate;
                         
                         if ($tariff) {
@@ -366,9 +361,7 @@ class AdminReadingsController extends Controller
                     
                     if ($remainingReadings->count() >= 2) {
                         // Regenerate bills for all reading pairs
-                        // Use dependency injection to get services
                         $billingEngine = app(BillingEngine::class);
-                        $periodCalculator = app(BillingPeriodCalculator::class);
                         $tariff = $account->tariffTemplate;
                         
                         if ($tariff) {

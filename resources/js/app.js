@@ -5,8 +5,6 @@ import TariffTemplateForm from './components/TariffTemplateForm.vue';
 import UserManagementForm from './components/UserManagementForm.vue';
 import UserAccountSetupForm from './components/UserAccountSetupForm.vue';
 import UserAccountManagerForm from './components/UserAccountManagerForm.vue';
-import BillingCalculatorForm from './components/BillingCalculatorForm.vue';
-
 // Mount Vue app for legacy region-cost-app element
 const regionCostApp = document.getElementById('region-cost-app');
 if (regionCostApp) {
@@ -50,13 +48,4 @@ if (userAccountManagerApp) {
         ...JSON.parse(userAccountManagerApp.dataset.props || '{}')
     });
     app.mount(userAccountManagerApp);
-}
-
-// Mount Vue app for billing calculator
-const billingCalculatorApp = document.getElementById('billing-calculator-app');
-if (billingCalculatorApp) {
-    const app = createApp(BillingCalculatorForm, {
-        ...JSON.parse(billingCalculatorApp.dataset.props || '{}')
-    });
-    app.mount(billingCalculatorApp);
 }

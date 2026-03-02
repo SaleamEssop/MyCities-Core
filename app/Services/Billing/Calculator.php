@@ -432,6 +432,32 @@ final class Calculator
     }
 
     // =========================================================================
+    // PD Section 5.1 — Period Enumeration
+    // =========================================================================
+
+    /**
+     * Return all billing periods {start, end} (both INCLUSIVE) whose start falls
+     * within the span of $startDate to $endDate. Uses Calendar for all date math.
+     *
+     * @return array<int, array{start: string, end: string}>
+     */
+    public function calculatePeriods(int $billDay, string $startDate, string $endDate): array
+    {
+        $calendar = new Calendar();
+        $periods  = [];
+        $current  = $calendar->periodStart($startDate, $billDay);
+        $last     = $calendar->periodStart($endDate, $billDay);
+
+        while ($current <= $last) {
+            $end       = $calendar->periodEnd($current, $billDay);
+            $periods[] = ['start' => $current, 'end' => $end];
+            $current   = $calendar->nextDay($end);
+        }
+
+        return $periods;
+    }
+
+    // =========================================================================
     // PD Section 9.0 — Fixed Costs
     // =========================================================================
 

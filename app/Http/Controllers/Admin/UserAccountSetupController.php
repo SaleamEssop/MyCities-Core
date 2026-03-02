@@ -506,7 +506,7 @@ class UserAccountSetupController extends Controller
             $billDay = (int) ($account->bill_day ?? $tariffTemplate->billing_day ?? 15);
             $isMonthly = $tariffTemplate->billing_type === 'MONTHLY';
             
-            // Direct DB inserts bypass the MeterReadingObserver (which has BillingPeriodCalculator issues)
+            // Direct DB inserts bypass the MeterReadingObserver
             
             // Step 1: Get TODAY
             $today = \Carbon\Carbon::now()->setTime(0, 0, 0);
@@ -629,8 +629,8 @@ class UserAccountSetupController extends Controller
             $validationErrors = [];
             $activePeriodFound = false;
             
-            // Get periods from calculator API (includes all periods, even if no bills exist yet)
-            $calculatorController = app(\App\Http\Controllers\Admin\BillingCalculatorController::class);
+            // Get periods from CalculatorController (Calculator.php + Calendar.php)
+            $calculatorController = app(\App\Http\Controllers\Admin\CalculatorController::class);
             $calculatorRequest = new \Illuminate\Http\Request();
             $calculatorRequest->merge(['account_id' => $account->id]);
             $calculatorResponse = $calculatorController->calculatePeriods($calculatorRequest);
@@ -641,24 +641,24 @@ class UserAccountSetupController extends Controller
                 
                 foreach ($allPeriods as $periodData) {
                     $periodStart = \Carbon\Carbon::parse($periodData['start'])->setTime(0, 0, 0);
-                    $periodEnd = \Carbon\Carbon::parse($periodData['end'])->setTime(0, 0, 0);
+                    $periodEnd   = \Carbon\Carbon::parse($periodData['end'])->setTime(0, 0, 0);
                     
                     // Validation 1: No period may start after current date
                     if ($periodStart->gt($today)) {
                         $validationErrors[] = "Period starting {$periodStart->format('Y-m-d')} starts after current date ({$today->format('Y-m-d')})";
                     }
                     
-                    // Validation 2: Current date must fall within exactly one period (the active period)
-                    if ($periodStart->lte($today) && $today->lt($periodEnd)) {
+                    // Validation 2: Current date must fall within exactly one period (inclusive end)
+                    if ($periodStart->lte($today) && $today->lte($periodEnd)) {
                         if ($activePeriodFound) {
                             $validationErrors[] = "Multiple periods contain current date ({$today->format('Y-m-d')})";
                         }
                         $activePeriodFound = true;
                     }
                     
-                    // Validation 3: Periods must follow inclusive start / exclusive end rule
-                    if ($periodStart->gte($periodEnd)) {
-                        $validationErrors[] = "Period starting {$periodStart->format('Y-m-d')} has invalid end date ({$periodEnd->format('Y-m-d')}) - end must be after start";
+                    // Validation 3: Period end must be on or after start (inclusive)
+                    if ($periodStart->gt($periodEnd)) {
+                        $validationErrors[] = "Period starting {$periodStart->format('Y-m-d')} has invalid end date ({$periodEnd->format('Y-m-d')}) - end must be on or after start";
                     }
                 }
                 

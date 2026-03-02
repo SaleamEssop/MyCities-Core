@@ -5,7 +5,7 @@ namespace App\Observers;
 use App\Models\Bill;
 use App\Models\MeterReadings;
 use App\Services\BillingEngine;
-use App\Services\BillingPeriodCalculator;
+use App\Services\Billing\Calendar;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -17,12 +17,12 @@ use Illuminate\Support\Facades\Log;
  * 
  * RESPONSIBILITIES:
  * - Detects new actual readings
- * - Calls BillingPeriodCalculator to get periods
+ * - Calls Calendar for period date math
  * - Calls BillingEngine.process() with precomputed periods
  * - Persists bills to database
  * 
  * INTERACTS WITH:
- * - Calls: BillingPeriodCalculator, BillingEngine
+ * - Calls: Calendar, BillingEngine
  * - Persists: Bill models
  * 
  * @see docs/ComprehensiveBillingArchitecture.md for complete architecture
@@ -30,12 +30,12 @@ use Illuminate\Support\Facades\Log;
 class MeterReadingObserver
 {
     protected BillingEngine $billingEngine;
-    protected BillingPeriodCalculator $periodCalculator;
+    protected Calendar $calendar;
 
-    public function __construct(BillingEngine $billingEngine, BillingPeriodCalculator $periodCalculator)
+    public function __construct(BillingEngine $billingEngine, Calendar $calendar)
     {
         $this->billingEngine = $billingEngine;
-        $this->periodCalculator = $periodCalculator;
+        $this->calendar = $calendar;
     }
 
     /**
@@ -43,7 +43,7 @@ class MeterReadingObserver
      * When a new reading is submitted:
      * 1. Auto-generate bill if opening reading exists (for any reading type - 2 readings allow consumption calculation)
      * 2. Reconcile provisional periods if this is an actual reading
-     * 3. Handle Projected → Actual transition if reading is on bill day
+     * 3. Handle Projected â†’ Actual transition if reading is on bill day
      */
     public function created(MeterReadings $reading): void
     {
@@ -77,7 +77,7 @@ class MeterReadingObserver
                 }
             }
             
-            // Step 3: Handle Projected → Actual transition if reading is on bill day
+            // Step 3: Handle Projected â†’ Actual transition if reading is on bill day
             // This transition logic only applies to actual readings
             if ($reading->isActual()) {
                 $this->handleProjectedToActualTransition($account, $meter, $reading);
@@ -161,10 +161,10 @@ class MeterReadingObserver
             $isDateToDate = $tariff->isDateToDateBilling();
 
             if ($isDateToDate) {
-                // ✅ DATE_TO_DATE MODE: Use DateToDatePeriodCalculator
+                // âœ… DATE_TO_DATE MODE: Use DateToDatePeriodCalculator
                 $this->generateDateToDateBill($account, $meter, $tariff, $closingReading);
             } else {
-                // ✅ MONTHLY MODE: Use existing BillingPeriodCalculator logic
+                // âœ… MONTHLY MODE: Use existing BillingPeriodCalculator logic
                 $this->generateMonthlyBill($account, $meter, $tariff, $openingReading, $closingReading, $readings);
             }
         } catch (\Exception $e) {
@@ -214,7 +214,7 @@ class MeterReadingObserver
                     'period_number' => $period['period_number'] ?? null,
                     'status' => $period['status'] ?? 'UNKNOWN',
                 ]);
-                continue; // ✅ Skip OPEN periods - they are not stored
+                continue; // âœ… Skip OPEN periods - they are not stored
             }
 
             // Check if bill already exists for this period
@@ -376,8 +376,10 @@ class MeterReadingObserver
         }
         $billDay = !is_null($accountBillDay) && $accountBillDay > 0 ? $accountBillDay : $tariffBillDay;
 
-        // Calculate periods using BillingPeriodCalculator
-        $periods = $this->periodCalculator->calculatePeriods(
+        // Calculate periods using Calendar (inclusive end dates)
+        $calendarInst = new \App\Services\Billing\Calendar();
+        $calendarCalc = new \App\Services\Billing\Calculator($calendarInst);
+        $periods = $calendarCalc->calculatePeriods(
             $billDay,
             $readings[0]['date'],
             $readings[1]['date']
@@ -425,7 +427,7 @@ class MeterReadingObserver
         foreach ($result['bills'] as $billData) {
             $usageStatus = $billData['usage_status'] ?? \App\Services\BillingEngine::USAGE_PROVISIONAL;
             
-            // ✅ Skip PROJECTED periods - they are not stored (current open period exception)
+            // âœ… Skip PROJECTED periods - they are not stored (current open period exception)
             if ($usageStatus === \App\Services\BillingEngine::USAGE_PROJECTED) {
                 Log::info('Skipping PROJECTED period for MONTHLY mode (current open period)', [
                     'account_id' => $account->id,
@@ -434,7 +436,7 @@ class MeterReadingObserver
                     'period_end' => $billData['end'] ?? null,
                     'usage_status' => $usageStatus,
                 ]);
-                continue; // ✅ Skip PROJECTED periods - they are not stored
+                continue; // âœ… Skip PROJECTED periods - they are not stored
             }
 
             // Only store PROVISIONAL, ACTUAL, or CALCULATED periods
@@ -470,8 +472,8 @@ class MeterReadingObserver
 
             // Prepare bill data for creation with period dates
             $billDataForCreation = array_merge($billData, [
-                'period_start_date' => $billData['start'] ?? null, // ✅ ADD: Period start date
-                'period_end_date' => $billData['end'] ?? null, // ✅ ADD: Period end date
+                'period_start_date' => $billData['start'] ?? null, // âœ… ADD: Period start date
+                'period_end_date' => $billData['end'] ?? null, // âœ… ADD: Period end date
                 'opening_reading_id' => $openingReading->id,
                 'closing_reading_id' => $closingReading->id,
                 'fixed_charges' => $fixedCharges,
@@ -646,7 +648,7 @@ class MeterReadingObserver
     }
 
     /**
-     * Handle Projected → Actual transition when user submits reading on bill day
+     * Handle Projected â†’ Actual transition when user submits reading on bill day
      * 
      * This confirms the end of the current period (confirmation, not rewriting history)
      * 
@@ -672,10 +674,10 @@ class MeterReadingObserver
 
         // Check if reading is on bill day (or grace window)
         $readingDate = \Carbon\Carbon::parse($reading->reading_date);
-        $periodCalculator = new BillingPeriodCalculator();
-        $readingPeriod = $periodCalculator->findPeriodForDate($readingDate->format('Y-m-d'), $billDay);
-        $periodEnd = \Carbon\Carbon::parse($readingPeriod['end']); // bill_day of next period
-        $billDayDate = $periodEnd->copy();
+        $cal = new \App\Services\Billing\Calendar();
+        $pStart        = $cal->periodStart($readingDate->format('Y-m-d'), $billDay);
+        $pEndInclusive = $cal->periodEnd($pStart, $billDay);
+        $billDayDate   = \Carbon\Carbon::parse($pEndInclusive)->addDay(); // exclusive end = bill_day of next period
         $oneDayBefore = $billDayDate->copy()->subDay();
         $oneDayAfter = $billDayDate->copy()->addDay();
 
@@ -698,13 +700,13 @@ class MeterReadingObserver
             ->first();
 
         if ($currentPeriodBill) {
-            // Transition: Projected → Actual
+            // Transition: Projected â†’ Actual
             $currentPeriodBill->usage_status = \App\Services\BillingEngine::USAGE_ACTUAL;
             $currentPeriodBill->bill_total_status = \App\Services\BillingEngine::TOTAL_ACTUAL;
             $currentPeriodBill->finalized_at = \Carbon\Carbon::now()->format('Y-m-d H:i:s');
             $currentPeriodBill->save();
 
-            Log::info('Period transition: PROJECTED → ACTUAL', [
+            Log::info('Period transition: PROJECTED â†’ ACTUAL', [
                 'bill_id' => $currentPeriodBill->id,
                 'meter_id' => $meter->id,
                 'reading_id' => $reading->id,

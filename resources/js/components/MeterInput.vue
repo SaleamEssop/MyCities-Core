@@ -108,7 +108,10 @@ function isLeadingZero (pos) {
 
 // ── Focus / blur ──────────────────────────────────────────
 function onFocus ()    { isFocused.value = true }
-function onBlur ()     { isFocused.value = false }
+function onBlur ()     {
+  isFocused.value = false
+  emit('change', digitsToKl())  // reconciliation runs once when user leaves the field
+}
 function onWrapClick () {
   if (props.disabled) return
   // If already focused, don't reset cursor (user may have clicked a slot)
@@ -178,7 +181,7 @@ function clearAll () {
 function emitChange () {
   const kl = digitsToKl()
   emit('update:modelValue', kl)
-  emit('change', kl)
+  // 'change' emitted only on blur so parent reconciliation runs after user finishes the reading
 }
 </script>
 

@@ -132,8 +132,6 @@ Route::prefix('v1')->group(function() {
         // Payments
         Route::get('/payments/{account}', [\App\Http\Controllers\Api\BillingController::class, 'getPayments']);
         Route::post('/payments', [\App\Http\Controllers\Api\BillingController::class, 'addPayment']);
-        // Test endpoint for new CalculatorPHP (isolated from legacy code)
-        Route::post('/test-calculator-php', [\App\Http\Controllers\Api\BillingController::class, 'testCalculatorPHP']);
         Route::post('/compute-period', [\App\Http\Controllers\Api\BillingController::class, 'computePeriod']);
     });
 
@@ -186,17 +184,6 @@ Route::prefix('v1')->group(function() {
         // Undo actions
         Route::post('/actions/{actionId}/undo', [\App\Http\Controllers\Api\AdminReadingsController::class, 'undoAction']);
         
-        // Billing Calculator (Test Tool)
-        // Note: Using auth.sanctum-or-session to allow both API tokens and web session auth
-        // This enables the calculator to work when opened directly (file://) with session auth
-        Route::post('/billing-calculator/seed', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'seed']);
-        Route::post('/billing-calculator/calculate', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'calculate']);
-        Route::post('/billing-calculator/calculate-summary', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'calculateSummary']);
-        Route::post('/billing-calculator/reconcile', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'reconcilePeriod']);
-        Route::get('/billing-calculator/field-info/{fieldName}', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'getFieldInfo']);
-        Route::get('/billing-calculator/tariff-templates', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'getTariffTemplates'])->middleware('auth.sanctum-or-session');
-        Route::post('/billing-calculator/tariff-template-details', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'getTariffTemplateDetails'])->middleware('auth.sanctum-or-session');
-        Route::post('/billing-calculator/generate-bill', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'generateBill']);
     });
 });
 

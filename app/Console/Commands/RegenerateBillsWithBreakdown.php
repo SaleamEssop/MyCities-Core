@@ -5,8 +5,9 @@ namespace App\Console\Commands;
 use App\Models\Account;
 use App\Models\Bill;
 use App\Models\MeterReadings;
+use App\Services\Billing\Calculator;
+use App\Services\Billing\Calendar;
 use App\Services\BillingEngine;
-use App\Services\BillingPeriodCalculator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -58,8 +59,9 @@ class RegenerateBillsWithBreakdown extends Command
             $this->warn("DRY RUN - No changes will be made");
         }
 
-        $billingEngine = app(BillingEngine::class);
-        $periodCalculator = app(BillingPeriodCalculator::class);
+        $billingEngine  = app(BillingEngine::class);
+        $calendar       = new Calendar();
+        $billingCalc    = new Calculator($calendar);
 
         $totalBillsDeleted = 0;
         $totalBillsCreated = 0;
@@ -142,7 +144,7 @@ class RegenerateBillsWithBreakdown extends Command
                             ]
                         ];
 
-                        $periods = $periodCalculator->calculatePeriods(
+                        $periods = $billingCalc->calculatePeriods(
                             $billDay,
                             $readings[0]['date'],
                             $readings[1]['date']

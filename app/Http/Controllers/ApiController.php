@@ -621,52 +621,22 @@ class ApiController extends Controller
 
     public function getMeter(Request $request)
     {
-        // TEMPORARY DEBUG: Block readings
-        \Log::info("getMeter: TEMPORARILY BLOCKED", [
-            'account_id' => $request->get('account_id'),
-            'reason' => 'Temporary debug - readings blocked'
-        ]);
-
         $accountID = $request->get('account_id');
         if (empty($accountID))
             return response()->json(['status' => false, 'code' => 400, 'msg' => 'Oops, account_id is required!']);
 
-        // TEMPORARILY RETURN METERS WITHOUT READINGS
-        $meters = Meter::where('account_id', $accountID)->get();
-        foreach ($meters as $meter) {
-            $meter->setRelation('readings', collect([])); // Empty readings
-        }
-
-        return response()->json(['status' => true, 'code' => 200, 'msg' => 'Meters retrieved successfully! (TEMPORARILY BLOCKED READINGS)', 'data' => $meters]);
-        
-        // TEMPORARILY COMMENTED OUT
-        // $meters = Meter::with('readings')->where('account_id', $accountID)->get();
-        // return response()->json(['status' => true, 'code' => 200, 'msg' => 'Meters retrieved successfully!', 'data' => $meters]);
+        $meters = Meter::with('readings')->where('account_id', $accountID)->get();
+        return response()->json(['status' => true, 'code' => 200, 'msg' => 'Meters retrieved successfully!', 'data' => $meters]);
     }
 
     public function getMeterReadings(Request $request)
     {
-        // TEMPORARY DEBUG: Block readings
-        \Log::info("getMeterReadings: TEMPORARILY BLOCKED", [
-            'meter_id' => $request->get('meter_id'),
-            'reason' => 'Temporary debug - readings blocked'
-        ]);
-
         $meterID = $request->get('meter_id');
         if (empty($meterID))
             return response()->json(['status' => false, 'code' => 400, 'msg' => 'Oops, meter_id is required!']);
 
-        // TEMPORARILY RETURN METERS WITHOUT READINGS
-        $meters = Meter::where('id', $meterID)->get();
-        foreach ($meters as $meter) {
-            $meter->setRelation('readings', collect([])); // Empty readings
-        }
-
-        return response()->json(['status' => true, 'code' => 200, 'msg' => 'Meters retrieved successfully! (TEMPORARILY BLOCKED READINGS)', 'data' => $meters]);
-        
-        // TEMPORARILY COMMENTED OUT
-        // $meters = Meter::with('readings')->where('id', $meterID)->get();
-        // return response()->json(['status' => true, 'code' => 200, 'msg' => 'Meters retrieved successfully!', 'data' => $meters]);
+        $meters = Meter::with('readings')->where('id', $meterID)->get();
+        return response()->json(['status' => true, 'code' => 200, 'msg' => 'Meters retrieved successfully!', 'data' => $meters]);
     }
 
     public function addMeterReadings(Request $request)

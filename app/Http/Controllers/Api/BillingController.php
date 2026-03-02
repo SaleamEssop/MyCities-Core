@@ -192,15 +192,16 @@ class BillingController extends Controller
     }
 
     /**
-     * Calculate a specific bill using the unified engine.
+     * Calculate a specific bill using Calculator.php (PD.md engine).
      */
     public function calculateBill(Request $request): JsonResponse
     {
         $request->validate(['bill_id' => 'required|exists:bills,id']);
 
         try {
-            $calculator = new \App\Services\CalculatorPHP();
-            $results = $calculator->computePeriod((int) $request->bill_id);
+            $calendar   = new \App\Services\Billing\Calendar();
+            $calculator = new \App\Services\Billing\Calculator($calendar);
+            $results    = $calculator->computePeriod((int) $request->bill_id);
 
             return response()->json(['success' => true, 'data' => $results]);
         } catch (\Exception $e) {
@@ -273,39 +274,16 @@ class BillingController extends Controller
     }
 
     /**
-     * Test endpoint for CalculatorPHP.
-     */
-    public function testCalculatorPHP(Request $request): JsonResponse
-    {
-        try {
-            $request->validate(['bill_id' => 'required|exists:bills,id']);
-            $billId = $request->input('bill_id');
-
-            $calculator = new \App\Services\CalculatorPHP();
-            $results = $calculator->computePeriod((int) $billId);
-
-            return response()->json(['success' => true, 'results' => $results]);
-        } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Compute Period logic.
+     * Compute Period logic — requires bill_id, delegates to Calculator.php.
      */
     public function computePeriod(Request $request): JsonResponse
     {
         try {
-            $request->validate([
-                'account_id' => 'required|exists:accounts,id',
-                'meter_id' => 'required|exists:meters,id',
-            ]);
+            $request->validate(['bill_id' => 'required|exists:bills,id']);
 
-            $account = $this->billingRepository->findAccount($request->input('account_id'), Auth::user());
-            $meter = Meter::find($request->input('meter_id'));
-
-            $calculator = new \App\Services\CalculatorPHP();
-            $results = $calculator->computePeriod($account, $meter);
+            $calendar   = new \App\Services\Billing\Calendar();
+            $calculator = new \App\Services\Billing\Calculator($calendar);
+            $results    = $calculator->computePeriod((int) $request->input('bill_id'));
 
             return response()->json(['success' => true, 'data' => $results]);
         } catch (\Exception $e) {
@@ -314,15 +292,16 @@ class BillingController extends Controller
     }
 
     /**
-     * Get period info (Compatibility).
+     * Get period info for an account using Calendar.php.
      */
-    public function getPeriodInfo($account, $tariff)
+    public function getPeriodInfo($account, $tariff): array
     {
-        $calculator = app(\App\Services\BillingPeriodCalculator::class);
-        $now = now();
-        $billDay = $account->bill_day ?: $tariff->billing_day ?: 1;
-        $start = $calculator->findPeriodStartForDate($now, $billDay);
-        $end = $calculator->calculatePeriodEnd($start, $billDay);
+        $calendar = new \App\Services\Billing\Calendar();
+        $billDay  = (int) ($account->bill_day ?: $tariff->billing_day ?: 1);
+        $now      = now('Africa/Johannesburg')->toDateString();
+        $start    = $calendar->periodStart($now, $billDay);
+        $end      = $calendar->periodEnd($start, $billDay);
+
         return ['start_date' => $start, 'end_date' => $end];
     }
 }

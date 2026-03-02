@@ -807,16 +807,19 @@ const effectiveToday = computed(() => {
   return props.today || localDateStr(new Date())
 })
 
-// Keep currentDate clamped whenever periods are added or the date changes.
-// min = last period's start; max = props.today (real date).
+// Keep currentDate clamped when the feature is active. Only runs when currentDateActive
+// so inactive current date does not play a role (avoids watcher ping-pong when new period start > today).
 watch(
-  () => [test.value.periods.length, test.value.currentDate],
+  () => [test.value.periods.length, test.value.currentDate, test.value.currentDateActive],
   () => {
+    if (!test.value.currentDateActive) return
     const realToday   = props.today || localDateStr(new Date())
     const lastPeriod  = test.value.periods[test.value.periods.length - 1]
     const minDate     = lastPeriod?.start ?? test.value.periodStart ?? ''
-    if (minDate && test.value.currentDate < minDate) test.value.currentDate = minDate
-    if (test.value.currentDate > realToday)          test.value.currentDate = realToday
+    let clamped = test.value.currentDate
+    if (minDate && clamped < minDate) clamped = minDate
+    if (clamped > realToday)         clamped = realToday
+    if (clamped !== test.value.currentDate) test.value.currentDate = clamped
   },
   { immediate: false }
 )
@@ -1142,11 +1145,11 @@ function recomputePeriodWater (period, pi) {
     .sort((a, b) => a.date.localeCompare(b.date))
 
   if (valid.length === 0) {
-    w.sectors = []; w.provisionalClosingLitres = null; w.dailyUsage = null
-    if (w.inheritedDailyUsage != null && w.inheritedDailyUsage > 0) {
-      w.dailyUsage = w.inheritedDailyUsage
-      w.provisionalClosingLitres = Math.round(w.openingLitres + w.inheritedDailyUsage * period.blockDays)
-    }
+    w.sectors = []; w.dailyUsage = w.inheritedDailyUsage ?? null
+    // Close provisionally with opening (0 or inherited) — subject to reconciliation when 2nd reading is obtained
+    w.provisionalClosingLitres = w.inheritedDailyUsage != null && w.inheritedDailyUsage > 0
+      ? Math.round(w.openingLitres + w.inheritedDailyUsage * period.blockDays)
+      : w.openingLitres
     return
   }
 
@@ -1157,11 +1160,10 @@ function recomputePeriodWater (period, pi) {
   }
   const sequential = valid.filter(r => !r.error)
   if (!sequential.length) {
-    w.sectors = []; w.provisionalClosingLitres = null; w.dailyUsage = null
-    if (w.inheritedDailyUsage) {
-      w.dailyUsage = w.inheritedDailyUsage
-      w.provisionalClosingLitres = Math.round(w.openingLitres + w.inheritedDailyUsage * period.blockDays)
-    }
+    w.sectors = []; w.dailyUsage = w.inheritedDailyUsage ?? null
+    w.provisionalClosingLitres = w.inheritedDailyUsage != null && w.inheritedDailyUsage > 0
+      ? Math.round(w.openingLitres + w.inheritedDailyUsage * period.blockDays)
+      : w.openingLitres
     return
   }
 
@@ -1232,25 +1234,39 @@ async function reconcileStraddleWater (pi) {
   if (leftAnchor === null) return
 
   const totalUsage = rightAnchor.litres - leftAnchor.litres
-  const spanFrom   = nextDay(leftAnchor.date)
-  const totalDays  = blockDays(spanFrom, rightAnchor.date)
-  if (totalDays <= 0 || totalUsage < 0) return
+  if (totalUsage < 0) return
 
+  // Use full period block days per period (opening is anchor; allocation by period length).
   const slices = []
   for (let k = leftPeriodIdx; k <= pi - 1; k++) {
-    const p         = test.value.periods[k]
-    const sliceStart = (k === leftPeriodIdx) ? spanFrom : p.start
-    const sliceDays  = blockDays(sliceStart, p.end)
+    const p = test.value.periods[k]
+    const sliceDays = p.blockDays ?? blockDays(p.start, p.end)
     slices.push({ k, p, sliceDays })
+  }
+  const totalDays = slices.reduce((sum, s) => sum + s.sliceDays, 0)
+  if (totalDays <= 0) return
+
+  // Base allocation: floor for each (PD 4.0). Distribute remainder to max-length periods so equal block days get equal litres.
+  const baseAlloc = slices.map(s => Math.floor(totalUsage * s.sliceDays / totalDays))
+  let remainder = totalUsage - baseAlloc.reduce((a, b) => a + b, 0)
+  const maxDays = Math.max(...slices.map(s => s.sliceDays))
+  const maxIdx = slices.map((s, i) => (s.sliceDays === maxDays ? i : -1)).filter(i => i >= 0)
+  let r = 0
+  while (remainder > 0 && maxIdx.length > 0) {
+    baseAlloc[maxIdx[r % maxIdx.length]]++
+    remainder--
+    r++
   }
 
   let prevClosing = leftAnchor.litres
-  for (const { k, p, sliceDays } of slices) {
+  for (let idx = 0; idx < slices.length; idx++) {
+    const { k, p } = slices[idx]
     const pw = p.water
     if (!pw) continue
     if (k > leftPeriodIdx) { pw.openingLitres = prevClosing; pw.openingDate = p.start }
     pw.provisionalClosingSnapshot = pw.provisionalClosingLitres
-    pw.calculatedClosingLitres    = prevClosing + Math.floor(totalUsage * sliceDays / totalDays)
+    const alloc = baseAlloc[idx]
+    pw.calculatedClosingLitres = prevClosing + alloc
     prevClosing = pw.calculatedClosingLitres
   }
 
@@ -1310,11 +1326,10 @@ function recomputePeriodElec (period, pi) {
     .sort((a, b) => a.date.localeCompare(b.date))
 
   if (valid.length === 0) {
-    e.sectors = []; e.provisionalClosingKwh = null; e.dailyUsage = null
-    if (e.inheritedDailyUsage != null && e.inheritedDailyUsage > 0) {
-      e.dailyUsage = e.inheritedDailyUsage
-      e.provisionalClosingKwh = Math.round(e.openingKwh + e.inheritedDailyUsage * period.blockDays)
-    }
+    e.sectors = []; e.dailyUsage = e.inheritedDailyUsage ?? null
+    e.provisionalClosingKwh = e.inheritedDailyUsage != null && e.inheritedDailyUsage > 0
+      ? Math.round(e.openingKwh + e.inheritedDailyUsage * period.blockDays)
+      : e.openingKwh
     return
   }
 
@@ -1325,7 +1340,10 @@ function recomputePeriodElec (period, pi) {
   }
   const sequential = valid.filter(r => !r.error)
   if (!sequential.length) {
-    e.sectors = []; e.provisionalClosingKwh = null; e.dailyUsage = null
+    e.sectors = []; e.dailyUsage = e.inheritedDailyUsage ?? null
+    e.provisionalClosingKwh = e.inheritedDailyUsage != null && e.inheritedDailyUsage > 0
+      ? Math.round(e.openingKwh + e.inheritedDailyUsage * period.blockDays)
+      : e.openingKwh
     return
   }
 

@@ -503,4 +503,45 @@ class CalculatorController extends Controller
         $deleted = DB::table('meter_readings')->where('id', $id)->delete();
         return response()->json(['success' => $deleted > 0]);
     }
+
+    /**
+     * POST /admin/calculator/calculate-periods
+     *
+     * Returns all billing periods for an account based on its reading date span.
+     * Replaces the old BillingCalculatorController::calculatePeriods().
+     */
+    public function calculatePeriods(Request $request): JsonResponse
+    {
+        $accountId = $request->input('account_id');
+        if (!$accountId) {
+            return response()->json(['success' => false, 'error' => 'account_id is required'], 422);
+        }
+
+        $account = Account::with(['meters.readings'])->find($accountId);
+        if (!$account) {
+            return response()->json(['success' => false, 'error' => 'Account not found'], 404);
+        }
+
+        $billDay  = (int) ($account->bill_day ?? 15);
+        $allDates = [];
+        foreach ($account->meters as $meter) {
+            foreach ($meter->readings as $reading) {
+                $date = $reading->reading_date ?? $reading->date ?? null;
+                if ($date) {
+                    $allDates[] = is_object($date) ? $date->format('Y-m-d') : (string) $date;
+                }
+            }
+        }
+
+        if (empty($allDates)) {
+            return response()->json(['success' => true, 'data' => ['periods' => []]]);
+        }
+
+        sort($allDates);
+        $calendar = new Calendar();
+        $calculator = new Calculator($calendar);
+        $periods  = $calculator->calculatePeriods($billDay, reset($allDates), end($allDates));
+
+        return response()->json(['success' => true, 'data' => ['periods' => $periods]]);
+    }
 }

@@ -115,7 +115,6 @@ const menuItems = [
   { label: 'Pages', icon: 'fas fa-fw fa-file-alt', route: 'pages-list', routes: ['pages-list', 'pages-create'] },
   { label: 'Advertising', icon: 'fas fa-fw fa-ad', route: 'ads-list', routes: ['ads-list', 'ads-categories'] },
   { label: 'App View', icon: 'fas fa-fw fa-mobile-alt', route: 'app-view', routes: ['app-view'] },
-  { label: 'Billing Calculator', icon: 'fas fa-fw fa-calculator', route: 'billing-calculator', routes: ['billing-calculator'] },
   { label: 'Calculator', icon: 'fas fa-fw fa-calculator', route: 'calculator', routes: ['calculator'] },
   { label: 'Alarms', icon: 'fas fa-fw fa-clock', route: 'alarms', routes: ['alarms'] },
   { label: 'Administrators', icon: 'fas fa-fw fa-user-shield', route: 'administrators.index', routes: ['administrators.index'] },

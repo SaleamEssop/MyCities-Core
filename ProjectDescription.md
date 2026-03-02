@@ -4,6 +4,14 @@
 
 **Architecture:** MyCities-Core only. Laravel 11. Vue 3 + Quasar (Vite). Inertia.js. PHP 8.3. **All consumption in integers (Litres/Wh)** until final cost step (No-Float Rule).
 
+**Minimum path (source of truth → UI):**
+- `Calculator.php` (all billing math, PD Sections 1–12)
+- `Calendar.php` (all date math, PD Section 5.0)
+- `CalculatorController.php` (HTTP bridge, serves Inertia + JSON endpoints)
+- `Calculator.vue` (sole UI, Vue 3 / Inertia)
+
+No Blade views for the calculator. No legacy CalculatorPHP, BillingPeriodCalculator, BillingCalculatorController, or AccountBillingCalculatorController — all deleted.
+
 ---
 
 ## Section 0: Field Definitions & State Rules (Reference for c.php)
@@ -56,8 +64,17 @@ Returns list of sub-sectors, each with `['start' => date, 'end' => date, 'usage'
 **Plain language:** Period boundaries and day counts use a single rule: **inclusive** block days. From start date to end date, block_days = (end − start in days) + 1. SAST timezone for all dates. Leap years and month lengths respected. This logic lives in `calendar.php`, not in c.php. c.php calls calendar for period start/end and for block-day counts when needed.
 
 **c.php / calendar.php:**  
-- **calendar.php:** `periodStart(string $date, int $billDay): string`, `periodEnd(string $periodStart, int $billDay): string`, `blockDays(string $start, string $end): int`. All day math inclusive.  
+- **calendar.php:** `periodStart(string $date, int $billDay): string`, `periodEnd(string $periodStart, int $billDay): string`, `blockDays(string $start, string $end): int`, `nextDay(string $date): string`. All day math inclusive.  
 - **c.php:** Uses `Calendar::blockDays()` (or equivalent) for sector and segment block counts; never implements its own day math.
+
+---
+
+## Section 5.1: Period Enumeration
+
+**Plain language:** Given a bill day and a date range (start → end), enumerate every billing period whose start falls within that range. Both `start` and `end` of each period are inclusive (Calendar semantics). This is used by the calculator UI to display period slots for an account, and by setup validation to confirm there is exactly one active period containing today.
+
+**c.php implementation:** `calculatePeriods(int $billDay, string $startDate, string $endDate): array`  
+Returns `[['start' => 'Y-m-d', 'end' => 'Y-m-d'], ...]`. Delegates entirely to `Calendar::periodStart()`, `Calendar::periodEnd()`, and `Calendar::nextDay()`. No billing math here.
 
 ---
 
@@ -149,6 +166,7 @@ All reads use the existing `DB` facade already present in c.php. No new applicat
 | 3.0        | Straddle split                    | `handleStraddle()` |
 | 4.0        | Remainder Method (no float)       | `applyRemainderMethod()` |
 | 5.0        | Calendar / inclusive days         | `calendar.php` |
+| 5.1        | Period enumeration                | `calculatePeriods()` |
 | 6.0        | Public entry                      | `computePeriod()` |
 | 7.0        | Tariff template resolution        | `loadTariffTemplate()` |
 | 8.0        | Tiered charge computation         | `applyTieredRates()` |
@@ -159,5 +177,5 @@ All reads use the existing `DB` facade already present in c.php. No new applicat
 
 ---
 
-**Last updated:** 2026-02-21  
-**Enforcement:** c.php must implement exactly these methods and no other billing math. All consumption in integers. Monetary rounding (2 dp) only at Section 12.0 persistence.
+**Last updated:** 2026-03-01  
+**Enforcement:** c.php must implement exactly these methods and no other billing math. All consumption in integers. Monetary rounding (2 dp) only at Section 12.0 persistence. No CalculatorPHP, no BillingPeriodCalculator, no Blade calculator views.

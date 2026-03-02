@@ -14,7 +14,6 @@ use App\Http\Controllers\Admin\UserAccountSetupController;
 use App\Http\Controllers\Admin\UserAccountManagerController;
 use App\Http\Controllers\Admin\DashboardErrorsController;
 use App\Http\Controllers\Admin\AdministratorsController;
-use App\Http\Controllers\Admin\AccountBillingCalculatorController;
 use App\Http\Controllers\Admin\AccountController;
 use App\Http\Controllers\User\UserAuthController;
 use App\Http\Controllers\User\UserAppController;
@@ -83,8 +82,6 @@ Route::get('/admin/forgot-password', fn () => Inertia::render('Admin/ForgotPassw
 
 Route::post('/admin/forgot-password', [AdminController::class, 'forgotPassword'])->name('admin.forgot-password.submit');
 
-// Public routes (no authentication required)
-Route::get('admin/billing-calculator/tariff-templates', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'getTariffTemplates']);
 
 // Admin routes
 Route::middleware(['auth'])->prefix('admin')->group(function () {
@@ -344,10 +341,7 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     // --- TARIFF TEMPLATES BY REGION (AJAX endpoint) ---
     Route::get('tariff-templates/by-region/{regionId}', [AdminController::class, 'getTariffTemplatesByRegion'])->name('get-tariff-templates-by-region');
 
-    // --- BILLING CALCULATOR (Modern Forensic PHP Engine) ---
-    Route::get('billing-calculator', fn () => Inertia::render('Admin/BillingCalculator'))->name('billing-calculator');
-
-    // --- CLEAN CALCULATOR (PD.md ↔ Calculator.php, Vue-rendered via Inertia) ---
+    // --- CALCULATOR (PD.md ↔ Calculator.php → Calculator.vue via Inertia) ---
     Route::get('calculator', [\App\Http\Controllers\Admin\CalculatorController::class, 'index'])->name('calculator');
     Route::post('calculator/compute', [\App\Http\Controllers\Admin\CalculatorController::class, 'compute'])->name('calculator.compute');
     Route::post('calculator/compute-charge', [\App\Http\Controllers\Admin\CalculatorController::class, 'computeCharge'])->name('calculator.compute-charge');
@@ -355,36 +349,7 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('calculator/account/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'getAccountData'])->name('calculator.account-data');
     Route::post('calculator/reading', [\App\Http\Controllers\Admin\CalculatorController::class, 'addReading'])->name('calculator.add-reading');
     Route::delete('calculator/reading/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'deleteReading'])->name('calculator.delete-reading');
-
-    // Billing Calculator API routes (web session auth for admin panel)
-    // Note: tariff-templates route is public (defined outside auth group)
-    Route::post('billing-calculator/tariff-template-details', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'getTariffTemplateDetails']);
-    Route::post('billing-calculator/create-test-bill', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'createTestBill']);
-    Route::post('billing-calculator/compute-period', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'computePeriod']);
-    Route::get('billing-calculator/users', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'getUsers']);
-    Route::get('billing-calculator/account/{id}', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'getAccountDetails']);
-    Route::post('billing-calculator/save-bills', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'saveBills'])->name('billing-calculator.save-bills');
-    Route::post('billing-calculator/api/calculate-periods', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'calculatePeriods'])->name('billing-calculator.calculate-periods');
-    Route::post('billing-calculator/api/dual-run-test', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'dualRunTest'])->name('billing-calculator.dual-run-test');
-    Route::post('billing-calculator/php', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'calculateWithPhp'])->name('billing-calculator.php');
-    Route::post('billing-calculator/php/sector', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'calculateSectorWithPhp'])->name('billing-calculator.php.sector');
-
-    // Account Mode Routes (New)
-    Route::get('billing-calculator/search-accounts', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'searchAccounts']);
-    Route::get('billing-calculator/account/{accountId}/bills', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'getAccountBills']);
-    Route::post('billing-calculator/account/{accountId}/customer-costs', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'updateCustomerCosts']);
-
-    // Account Billing Calculator (Production version with account management)
-    Route::get('account-billing-calculator', [\App\Http\Controllers\Admin\AccountBillingCalculatorController::class, 'index'])->name('account-billing-calculator');
-    Route::get('account-billing-calculator/search', [\App\Http\Controllers\Admin\AccountBillingCalculatorController::class, 'searchUsers'])->name('account-billing-calculator.search');
-    Route::get('account-billing-calculator/account/{id}', [\App\Http\Controllers\Admin\AccountBillingCalculatorController::class, 'getAccount'])->name('account-billing-calculator.account');
-    Route::post('account-billing-calculator/calculate', [\App\Http\Controllers\Admin\AccountBillingCalculatorController::class, 'calculateBill'])->name('account-billing-calculator.calculate');
-    Route::post('account-billing-calculator/reading', [\App\Http\Controllers\Admin\AccountBillingCalculatorController::class, 'addReading'])->name('account-billing-calculator.add-reading');
-    Route::delete('account-billing-calculator/reading/{id}', [\App\Http\Controllers\Admin\AccountBillingCalculatorController::class, 'deleteReading'])->name('account-billing-calculator.delete-reading');
-    Route::get('account-billing-calculator/tariff-templates', [\App\Http\Controllers\Admin\AccountBillingCalculatorController::class, 'getTariffTemplates'])->name('account-billing-calculator.tariff-templates');
-    Route::get('billing-calculator/api/account/{id}/meters', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'getAccountMeters']);
-    Route::post('billing-calculator/api/calculate', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'calculateBill']);
-    Route::post('billing-calculator/api/save-bill', [\App\Http\Controllers\Admin\BillingCalculatorController::class, 'saveBill']);
+    Route::post('calculator/calculate-periods', [\App\Http\Controllers\Admin\CalculatorController::class, 'calculatePeriods'])->name('calculator.calculate-periods');
 
     // --- REGIONS ---
     Route::get('regions', function () {

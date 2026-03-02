@@ -69,7 +69,10 @@ watch(() => props.modelValue, (v) => {
 }, { immediate: true })
 
 function onFocus ()    { isFocused.value = true }
-function onBlur ()     { isFocused.value = false }
+function onBlur ()     {
+  isFocused.value = false
+  emit('change', digitsToStr())  // reconciliation runs once when user leaves the field
+}
 function onWrapClick () {
   if (props.disabled) return
   if (!isFocused.value) { cursorPos.value = 0; isFocused.value = true }
@@ -112,7 +115,7 @@ function clearAll () {
 function emitChange () {
   const s = digitsToStr()
   emit('update:modelValue', s)
-  emit('change', s)
+  // 'change' emitted only on blur so parent reconciliation runs after user finishes the reading
 }
 </script>
 

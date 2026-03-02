@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\MeterReadings;
 use App\Observers\MeterReadingObserver;
+use App\EditorBlocks\AlertBlock;
 use App\EditorBlocks\ImageBlock;
 use BumpCore\EditorPhp\EditorPhp;
 use Illuminate\Support\ServiceProvider;
@@ -33,6 +34,9 @@ class AppServiceProvider extends ServiceProvider
         EditorPhp::useBootstrapFive();
 
         // Override the Image block so relative storage paths (/storage/...) pass validation.
-        EditorPhp::register(['image' => ImageBlock::class]);
+        EditorPhp::register([
+            'image' => ImageBlock::class,
+            'alert' => AlertBlock::class,
+        ]);
     }
 }

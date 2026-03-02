@@ -7,9 +7,6 @@
         <a href="/admin/calculator" class="block p-4 rounded bg-white shadow hover:shadow-md border border-gray-200">
           Calculator
         </a>
-        <a href="/admin/billing-calculator" class="block p-4 rounded bg-white shadow hover:shadow-md border border-gray-200">
-          Billing Calculator
-        </a>
       </div>
     </div>
   </div>

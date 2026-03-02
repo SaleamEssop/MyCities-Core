@@ -9,23 +9,25 @@ use App\Models\MeterReadings;
 use App\Models\Payment;
 use App\Models\RegionsAccountTypeCost;
 use App\Repositories\BillingRepository;
+use App\Services\Billing\Calculator;
+use App\Services\Billing\Calendar;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class DashboardService
 {
     private BillingRepository $billingRepository;
-    private CalculatorPHP $calculator;
-    private BillingPeriodCalculator $periodCalculator;
+    private Calculator $billingCalc;
+    private Calendar $calendar;
 
     public function __construct(
         BillingRepository $billingRepository,
-        CalculatorPHP $calculator,
-        BillingPeriodCalculator $periodCalculator
+        Calculator $billingCalc,
+        Calendar $calendar
     ) {
         $this->billingRepository = $billingRepository;
-        $this->calculator = $calculator;
-        $this->periodCalculator = $periodCalculator;
+        $this->billingCalc       = $billingCalc;
+        $this->calendar          = $calendar;
     }
 
     /**
@@ -191,30 +193,22 @@ class DashboardService
             ];
         }
 
-        // No bill - simulate calculation
+        // No bill yet — return consumption only; charges require a persisted bill.
         $consumption = $this->calculateConsumption($readings);
-
-        // Use CalculatorPHP for breakdown
-        $calcResults = [];
-        if ($type === 'water') {
-            $calcResults = $this->calculator->calculateTierCost($consumption, $tariff->water_in ?? []);
-        } else {
-            $calcResults = ['total' => 0, 'breakdown' => []];
-        }
 
         return [
             'enabled' => true,
             'meter' => [
-                'id' => $meter->id,
+                'id'     => $meter->id,
                 'number' => $meter->meter_number,
-                'title' => $meter->meter_title,
+                'title'  => $meter->meter_title,
             ],
-            'readings' => $this->formatReadings($readings),
+            'readings'    => $this->formatReadings($readings),
             'consumption' => $consumption,
-            'charges' => [
-                'total' => $calcResults['total'] ?? 0,
-                'breakdown' => $calcResults['breakdown'] ?? [],
-                'vat_amount' => ($calcResults['total'] ?? 0) * ($tariff->getVatRate() / 100),
+            'charges'     => [
+                'total'      => 0,
+                'breakdown'  => [],
+                'vat_amount' => 0,
             ],
         ];
     }
@@ -238,22 +232,17 @@ class DashboardService
 
     private function calculatePeriodInfo(Account $account, RegionsAccountTypeCost $tariff): array
     {
-        $billingDay = $account->bill_day ?: $tariff->billing_day;
-        if (!$billingDay)
-            $billingDay = 1;
+        $billingDay = $account->bill_day ?: $tariff->billing_day ?: 1;
 
-        $now = Carbon::now();
-        $periodStart = $this->periodCalculator->findPeriodStartForDate($now, $billingDay);
-        $periodEnd = $this->periodCalculator->calculatePeriodEnd($periodStart, $billingDay);
-
-        $startDate = Carbon::parse($periodStart);
-        $endDate = Carbon::parse($periodEnd);
+        $now         = Carbon::now('Africa/Johannesburg')->toDateString();
+        $periodStart = $this->calendar->periodStart($now, (int) $billingDay);
+        $periodEnd   = $this->calendar->periodEnd($periodStart, (int) $billingDay);
 
         return [
-            'start_date' => $startDate->toDateString(),
-            'end_date' => $endDate->toDateString(),
-            'days_in_period' => $startDate->diffInDays($endDate),
-            'status' => 'OPEN',
+            'start_date'     => $periodStart,
+            'end_date'       => $periodEnd,
+            'days_in_period' => $this->calendar->blockDays($periodStart, $periodEnd),
+            'status'         => 'OPEN',
         ];
     }
 
@@ -289,29 +278,31 @@ class DashboardService
         $billDay = $account->bill_day ?: $tariff->billing_day ?: 1;
 
         // 1. Generate periods
-        $periods = [];
-        if ($isDateToDate) {
-            $readings = $this->billingRepository->getAllReadingsForAccount($account);
-            if ($readings->count() >= 2) {
-                // Map database reading keys (reading_date, reading_value) to calculation keys (date, value)
-                $mappedReadings = $readings->map(fn($r) => [
-                    'date' => $r->reading_date,
-                    'value' => $r->reading_value,
-                    'type' => $r->reading_type ?? 'ACTUAL'
-                ])->toArray();
+        $periods  = [];
+        $readings = $this->billingRepository->getAllReadingsForAccount($account);
 
-                // Simplified date-to-date periods
-                $calcResults = $this->calculator->calculateDateToDate($mappedReadings, $tariff);
-                $periods = $calcResults['sectors'] ?? [];
+        if ($isDateToDate) {
+            // Date-to-date: each consecutive reading pair is one period
+            if ($readings->count() >= 2) {
+                $sorted = $readings->sortBy('reading_date')->values();
+                for ($i = 0; $i < $sorted->count() - 1; $i++) {
+                    $start = $sorted[$i]->reading_date;
+                    $end   = $sorted[$i + 1]->reading_date;
+                    $periods[] = [
+                        'start' => $start instanceof Carbon ? $start->toDateString() : (string) $start,
+                        'end'   => $end   instanceof Carbon ? $end->toDateString()   : (string) $end,
+                    ];
+                }
             }
         } else {
-            // Monthly periods
-            $readings = $this->billingRepository->getAllReadingsForAccount($account);
+            // Monthly: enumerate periods via Calculator (Calendar-backed)
             $firstReading = $readings->first();
-            $startDate = $firstReading ? ($firstReading->reading_date ?? Carbon::now()->subMonths(6)) : Carbon::now()->subMonths(6);
-            $endDate = Carbon::now();
+            $startDate    = $firstReading
+                ? ($firstReading->reading_date instanceof Carbon ? $firstReading->reading_date->toDateString() : (string) $firstReading->reading_date)
+                : Carbon::now()->subMonths(6)->toDateString();
+            $endDate = Carbon::now()->toDateString();
 
-            $periods = $this->periodCalculator->calculatePeriods((int) $billDay, $startDate->toDateString(), $endDate->toDateString());
+            $periods = $this->billingCalc->calculatePeriods((int) $billDay, $startDate, $endDate);
         }
 
         // 2. Fetch bills for these periods
