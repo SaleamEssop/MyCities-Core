@@ -183,6 +183,7 @@
               <div class="period-hdr-title">
                 Period {{ pi + 1 }}
                 <span v-if="pi === activePeriods.length - 1 && (mode === 'account' || (calculatorMode === 'dateToDate' && !period.closed))" class="chip-open">OPEN</span>
+                <span v-if="calculatorMode === 'dateToDate' && period.closed" class="chip-closed">CLOSED</span>
                 <span class="period-hdr-dates">
                   {{ fmt(period.start) }} → {{ fmt(period.end) }}
                   <span class="chip-days">{{ period.blockDays }} days</span>
@@ -334,7 +335,8 @@
                     <div class="date-wrap">
                       <i class="fas fa-calendar-alt date-icon"></i>
                       <input type="date" v-model="r.date" class="f-input r-date"
-                        :min="period.start" :max="period.end"
+                        :min="calculatorMode === 'dateToDate' && !period.closed ? d2dMinDateForReading(period, ri) : period.start"
+                        :max="period.end"
                         @change="calculatorMode === 'dateToDate' && !period.closed ? syncD2dReading(period, ri, pi) : recomputePeriodWater(period, pi)" />
                     </div>
                     <MeterInput v-model="r.klStr"
@@ -387,31 +389,42 @@
                 </table>
               </div>
 
-              <!-- Closing bar (water) -->
-              <div class="closing-bar" :class="period.water.calculatedClosingLitres != null && 'closing-bar--resolved'">
-                <div class="closing-cell">
-                  <div class="closing-cell-label">Closing provisional</div>
-                  <div class="closing-cell-val val-provisional">
-                    {{ period.water.provisionalClosingLitres != null ? litresToKlStr(period.water.provisionalClosingLitres) : '_ _' }}
+              <!-- Closing bar (water): D2D = single Closing (actual reading); P2P = provisional / calculated / adjustment -->
+              <div class="closing-bar" :class="period.water.calculatedClosingLitres != null && calculatorMode !== 'dateToDate' && 'closing-bar--resolved'">
+                <template v-if="calculatorMode === 'dateToDate'">
+                  <div class="closing-cell closing-cell--single">
+                    <div class="closing-cell-label">{{ period.closed ? 'Closing' : 'Last reading' }}</div>
+                    <div class="closing-cell-val">
+                      {{ period.water.provisionalClosingLitres != null ? litresToKlStr(period.water.provisionalClosingLitres) : '_ _' }}
+                    </div>
+                    <div class="closing-cell-sub" v-if="period.water.provisionalClosingLitres != null">{{ period.closed ? 'kL (actual reading)' : 'kL (to date)' }}</div>
                   </div>
-                  <div class="closing-cell-sub" v-if="period.water.provisionalBillR != null">R {{ fmtMoney(period.water.provisionalBillR) }}</div>
-                  <div class="closing-cell-sub" v-else-if="period.water.provisionalClosingLitres != null">kL</div>
-                </div>
-                <div class="closing-cell">
-                  <div class="closing-cell-label">Closing calculated</div>
-                  <div class="closing-cell-val" :class="period.water.calculatedClosingLitres != null ? 'val-calculated' : 'val-empty'">
-                    {{ period.water.calculatedClosingLitres != null ? litresToKlStr(period.water.calculatedClosingLitres) : '_ _' }}
+                </template>
+                <template v-else>
+                  <div class="closing-cell">
+                    <div class="closing-cell-label">Closing provisional</div>
+                    <div class="closing-cell-val val-provisional">
+                      {{ period.water.provisionalClosingLitres != null ? litresToKlStr(period.water.provisionalClosingLitres) : '_ _' }}
+                    </div>
+                    <div class="closing-cell-sub" v-if="period.water.provisionalBillR != null">R {{ fmtMoney(period.water.provisionalBillR) }}</div>
+                    <div class="closing-cell-sub" v-else-if="period.water.provisionalClosingLitres != null">kL</div>
                   </div>
-                  <div class="closing-cell-sub" v-if="period.water.calculatedBillR != null">R {{ fmtMoney(period.water.calculatedBillR) }}</div>
-                  <div class="closing-cell-sub" v-else-if="period.water.calculatedClosingLitres != null">kL</div>
-                </div>
-                <div class="closing-cell">
-                  <div class="closing-cell-label">Adjustment</div>
-                  <div class="closing-cell-val" :class="waterAdjClass(period)">{{ formatWaterAdj(period) }}</div>
-                  <div class="closing-cell-sub" v-if="period.water.calculatedClosingLitres != null">
-                    {{ (period.water.calculatedClosingLitres - period.water.provisionalClosingLitres) >= 0 ? 'shortfall' : 'surplus' }}
+                  <div class="closing-cell">
+                    <div class="closing-cell-label">Closing calculated</div>
+                    <div class="closing-cell-val" :class="period.water.calculatedClosingLitres != null ? 'val-calculated' : 'val-empty'">
+                      {{ period.water.calculatedClosingLitres != null ? litresToKlStr(period.water.calculatedClosingLitres) : '_ _' }}
+                    </div>
+                    <div class="closing-cell-sub" v-if="period.water.calculatedBillR != null">R {{ fmtMoney(period.water.calculatedBillR) }}</div>
+                    <div class="closing-cell-sub" v-else-if="period.water.calculatedClosingLitres != null">kL</div>
                   </div>
-                </div>
+                  <div class="closing-cell">
+                    <div class="closing-cell-label">Adjustment</div>
+                    <div class="closing-cell-val" :class="waterAdjClass(period)">{{ formatWaterAdj(period) }}</div>
+                    <div class="closing-cell-sub" v-if="period.water.calculatedClosingLitres != null">
+                      {{ (period.water.calculatedClosingLitres - period.water.provisionalClosingLitres) >= 0 ? 'shortfall' : 'surplus' }}
+                    </div>
+                  </div>
+                </template>
               </div>
             </template><!-- /water -->
 
@@ -559,7 +572,7 @@
 
             <!-- Period actions -->
             <div class="period-actions">
-              <button v-if="mode === 'test' && !!period[activeMeter(period)]" class="btn-add-reading" @click="addReadingToPeriod(period, pi)">
+              <button v-if="mode === 'test' && !!period[activeMeter(period)] && (calculatorMode !== 'dateToDate' || !period.closed)" class="btn-add-reading" @click="addReadingToPeriod(period, pi)">
                 <i class="fas fa-plus"></i> Add Reading
               </button>
               <button class="btn-calc" @click="calcPeriod(pi)"
@@ -597,9 +610,9 @@
                     {{ fmtN(effectivePeriodBill(period, pi).water.consumption_litres) }} L · {{ fmtKl(effectivePeriodBill(period, pi).water.consumption_kl) }} kL
                   </span>
                 </div>
-                <div v-if="calculatorMode === 'dateToDate' && period.blockDays > 0" class="bill-daily-consumption">
+                <div v-if="calculatorMode === 'dateToDate' && (period.water.sectors?.length ? period.water.sectors.reduce((a,s)=>a+s.block_days,0) : period.blockDays) > 0" class="bill-daily-consumption">
                   <span class="bill-daily-label">Daily consumption</span>
-                  <span class="bill-daily-val">{{ fmtN(Math.round(effectivePeriodBill(period, pi).water.consumption_litres / period.blockDays), 0) }} L/day</span>
+                  <span class="bill-daily-val">{{ fmtN(Math.round(effectivePeriodBill(period, pi).water.consumption_litres / (period.water.sectors?.length ? period.water.sectors.reduce((a,s)=>a+s.block_days,0) : period.blockDays)), 0) }} L/day</span>
                 </div>
                 <div class="bill-grid">
                   <div class="bill-stat"><div class="bill-stat-label">Usage Charge</div><div class="bill-stat-val">R {{ fmtMoney(effectivePeriodBill(period, pi).water.usage_charge) }}</div></div>
@@ -628,9 +641,9 @@
                   <i class="fas fa-bolt"></i> Electricity
                   <span class="bill-meter-consumption">{{ fmtN(effectivePeriodBill(period, pi).electricity.consumption_litres) }} kWh</span>
                 </div>
-                <div v-if="calculatorMode === 'dateToDate' && period.blockDays > 0" class="bill-daily-consumption">
+                <div v-if="calculatorMode === 'dateToDate' && (period.electricity?.sectors?.length ? period.electricity.sectors.reduce((a,s)=>a+s.block_days,0) : period.blockDays) > 0" class="bill-daily-consumption">
                   <span class="bill-daily-label">Daily consumption</span>
-                  <span class="bill-daily-val">{{ fmtN(Math.round(effectivePeriodBill(period, pi).electricity.consumption_litres / period.blockDays), 0) }} kWh/day</span>
+                  <span class="bill-daily-val">{{ fmtN(Math.round(effectivePeriodBill(period, pi).electricity.consumption_litres / (period.electricity?.sectors?.length ? period.electricity.sectors.reduce((a,s)=>a+s.block_days,0) : period.blockDays)), 0) }} kWh/day</span>
                 </div>
                 <div class="bill-grid">
                   <div class="bill-stat"><div class="bill-stat-label">Usage Charge</div><div class="bill-stat-val">R {{ fmtMoney(effectivePeriodBill(period, pi).electricity.usage_charge) }}</div></div>
@@ -1205,10 +1218,11 @@ async function addPeriod () {
 
 function addReadingToPeriod (period, pi) {
   if (props.calculatorMode === 'dateToDate' && mode.value === 'test' && period.water && !period.closed) {
-    const lastDate = period.water.readings.length > 0
-      ? period.water.readings[period.water.readings.length - 1].date
-      : (period.water.openingDate || period.start)
-    d2d.value.readings.push({ date: lastDate || props.today || localDateStr(new Date()), litres: 0 })
+    const readings = period.water.readings
+    const lastDate = readings.length > 0 ? readings[readings.length - 1].date : (period.water.openingDate || period.start)
+    const minDate = lastDate ? nextDay(lastDate) : (period.water.openingDate || period.start)
+    const prevLitres = readings.length > 0 ? readings[readings.length - 1].litres : (period.water.openingLitres ?? 0)
+    d2d.value.readings.push({ date: minDate || props.today || localDateStr(new Date()), litres: Math.round(Number(prevLitres)) })
     recalcD2dOpenPeriodBill(pi)
     return
   }
@@ -1231,7 +1245,11 @@ function syncD2dReading (period, ri, pi) {
   if (!r) return
   const idx = period.d2dReadingsStartIndex + ri
   if (idx < 0 || idx >= d2d.value.readings.length) return
-  d2d.value.readings[idx] = { date: r.date, litres: r.litres != null ? r.litres : klStrToLitres(r.klStr || '0') }
+  const raw = r.litres != null ? r.litres : klStrToLitres(r.klStr || '0')
+  const minLitres = ri === 0 ? (period.water.openingLitres ?? 0) : (period.water.readings[ri - 1].litres ?? 0)
+  const litres = Math.max(minLitres, raw)
+  d2d.value.readings[idx] = { date: r.date, litres }
+  r.litres = litres
   if (typeof pi === 'number') recalcD2dOpenPeriodBill(pi)
 }
 
@@ -1544,7 +1562,8 @@ function calcBlockReason (period, pi) {
   // Sequential Gate (PD Section 1.0): previous period must have a bill first
   if (pi > 0) {
     const prev = activePeriods.value[pi - 1]
-    if (prev && !prev.bill) return `Period ${pi} must be calculated before this period`
+    const prevBill = prev && (props.calculatorMode === 'dateToDate' ? d2dBillState.value[pi - 1]?.bill : prev.bill)
+    if (prev && !prevBill) return `Period ${pi} must be calculated before this period`
   }
   return ''
 }
@@ -1564,6 +1583,10 @@ async function calcPeriod (pi) {
 
   if (!tariffId) { period.calcError = 'No tariff selected.'; return }
   await computePeriodBill(period, tariffId, accountId)
+  if (props.calculatorMode === 'dateToDate' && period.bill) {
+    const wasShowing = d2dBillState.value[pi]?.showBill
+    d2dBillState.value[pi] = { bill: period.bill, showBill: wasShowing ?? false }
+  }
 }
 
 function effectivePeriodBill (period, pi) {
@@ -1916,34 +1939,45 @@ async function runCalculationCascade (periods) {
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
-// Date-to-Date: build periods from anchor + readings (period closes when reading >= 30 days from anchor)
+// Date-to-Date: accept each reading into the current period; if last reading >= 30 days from opening, close and open next with that reading as anchor.
 // today: optional YYYY-MM-DD so open period date picker allows up to today
 function buildD2dPeriodsFromAnchorReadings (anchorDate, anchorLitres, readings, today) {
-  const sorted = [...(readings || [])].filter(r => r.date && (r.litres ?? r.value ?? 0) >= 0).sort((a, b) => a.date.localeCompare(b.date))
+  const filtered = [...(readings || [])].filter(r => r.date && (r.litres ?? r.value ?? 0) >= 0)
+  const sorted = filtered.sort((a, b) => new Date(a.date + 'T00:00:00') - new Date(b.date + 'T00:00:00'))
   const periods = []
   let anchor = { date: anchorDate, litres: Math.round(Number(anchorLitres || 0)) }
   let periodReadings = []
 
   for (const r of sorted) {
     const litres = Math.round(Number(r.litres ?? r.value ?? 0))
-    const daysFromAnchor = blockDays(anchor.date, r.date)
-    if (daysFromAnchor >= D2D_MIN_DAYS) {
-      periodReadings.push({ date: r.date, litres, klStr: (litres / 1000).toFixed(2), error: '' })
+    const prevDate = periodReadings.length ? periodReadings[periodReadings.length - 1].date : anchor.date
+    const prevLitres = periodReadings.length ? periodReadings[periodReadings.length - 1].litres : anchor.litres
+    const invalid = r.date <= prevDate || litres < prevLitres
+
+    // 1. Always accept this reading into the current period
+    periodReadings.push({
+      date: r.date, litres, klStr: (litres / 1000).toFixed(2),
+      error: invalid ? 'Date must be after previous; reading must be ≥ previous.' : '',
+    })
+
+    // 2. If last reading (this one) is >= 30 days from period opening, close this period and open next; use last reading as anchor
+    const daysFromOpening = blockDays(anchor.date, r.date)
+    if (daysFromOpening >= D2D_MIN_DAYS) {
       const start = anchor.date
       const end = r.date
-      const sectorInput = [
-        { reading_date: anchor.date, reading_value: anchor.litres },
-        ...periodReadings.map(x => ({ reading_date: x.date, reading_value: x.litres })),
-      ]
+      const validChain = [anchor, ...periodReadings.filter(x => !x.error)].map(x => ({ reading_date: x.date, reading_value: x.litres }))
+      const sectorInput = validChain.length >= 2 ? validChain : [{ reading_date: anchor.date, reading_value: anchor.litres }, { reading_date: r.date, reading_value: litres }]
       const sectors = buildSectors(sectorInput)
       const usage = Math.max(0, litres - anchor.litres)
       const bd = blockDays(start, end)
       const dailyUsage = bd > 0 ? Math.round(usage / bd) : 0
+      const closedStartIndex = sorted.length - periodReadings.length
       periods.push({
         start,
         end,
         blockDays: bd,
         expanded: periods.length === 0,
+        d2dReadingsStartIndex: closedStartIndex,
         water: {
           openingLitres: anchor.litres,
           openingDate: anchor.date,
@@ -1963,60 +1997,63 @@ function buildD2dPeriodsFromAnchorReadings (anchorDate, anchorLitres, readings, 
         bill: null,
         closed: true,
       })
-      anchor = { date: r.date, litres }
+      const closingReading = periodReadings[periodReadings.length - 1]
+      anchor = { date: closingReading.date, litres: closingReading.litres }
       periodReadings = []
-    } else {
-      periodReadings.push({ date: r.date, litres, klStr: (litres / 1000).toFixed(2), error: '' })
     }
   }
-  if (periodReadings.length > 0 || periods.length === 0) {
-    const start = anchor.date
-    const lastR = periodReadings[periodReadings.length - 1]
-    let end = lastR ? lastR.date : start
-    if (typeof today === 'string' && today) end = end < today ? today : end
-    const sectorInput = [
-      { reading_date: anchor.date, reading_value: anchor.litres },
-      ...periodReadings.map(x => ({ reading_date: x.date, reading_value: x.litres })),
-    ]
-    const sectors = sectorInput.length >= 2 ? buildSectors(sectorInput) : []
-    const lastLitres = lastR ? lastR.litres : anchor.litres
-    const usage = Math.max(0, lastLitres - anchor.litres)
-    const bd = blockDays(start, end)
-    const dailyUsage = bd > 0 ? Math.round(usage / bd) : 0
-    const d2dReadingsStartIndex = sorted.length - periodReadings.length
-    periods.push({
-      start,
-      end,
-      blockDays: bd,
-      expanded: true,
-      d2dReadingsStartIndex,
-      water: {
-        openingLitres: anchor.litres,
-        openingDate: anchor.date,
-        readings: periodReadings,
-        sectors,
-        dailyUsage,
-        provisionalClosingLitres: lastLitres,
-        calculatedClosingLitres: lastLitres,
-        stats: null,
-        adjustmentBroughtForward: 0,
-        insufficientData: false,
-      },
-      electricity: null,
-      showBill: false,
-      calculating: false,
-      calcError: '',
-      bill: null,
-      closed: false,
-    })
-  }
+  // Append open period: its opening = previous period closing (read from last closed); no closed periods = use initial anchor
+  const lastClosed = periods[periods.length - 1] ?? null
+  const openOpeningLitres = lastClosed?.water ? (lastClosed.water.calculatedClosingLitres ?? lastClosed.water.provisionalClosingLitres) : anchor.litres
+  const openOpeningDate = lastClosed?.water ? (lastClosed.end || anchor.date) : anchor.date
+  const start = openOpeningDate
+  const lastR = periodReadings[periodReadings.length - 1]
+  let end = lastR ? lastR.date : start
+  if (typeof today === 'string' && today) end = end < today ? today : end
+  const openAnchor = { date: openOpeningDate, litres: openOpeningLitres }
+  const validChain = [openAnchor, ...periodReadings.filter(x => !x.error)].map(x => ({ reading_date: x.date, reading_value: x.litres }))
+  const sectorInput = validChain.length >= 2 ? validChain : (periodReadings.length ? [{ reading_date: openOpeningDate, reading_value: openOpeningLitres }, { reading_date: periodReadings[0].date, reading_value: periodReadings[0].litres }] : [])
+  const sectors = sectorInput.length >= 2 ? buildSectors(sectorInput) : []
+  const lastLitres = lastR ? lastR.litres : openOpeningLitres
+  const usage = Math.max(0, lastLitres - openOpeningLitres)
+  const bd = blockDays(start, end)
+  const dailyUsage = bd > 0 ? Math.round(usage / bd) : 0
+  const d2dReadingsStartIndex = periodReadings.length ? sorted.length - periodReadings.length : sorted.length
+  periods.push({
+    start,
+    end,
+    blockDays: bd,
+    expanded: true,
+    d2dReadingsStartIndex,
+    water: {
+      openingLitres: openOpeningLitres,
+      openingDate: openOpeningDate,
+      readings: periodReadings,
+      sectors,
+      dailyUsage,
+      provisionalClosingLitres: lastLitres,
+      calculatedClosingLitres: lastLitres,
+      stats: null,
+      adjustmentBroughtForward: 0,
+      insufficientData: false,
+    },
+    electricity: null,
+    showBill: false,
+    calculating: false,
+    calcError: '',
+    bill: null,
+    closed: false,
+  })
   return periods
 }
 
 const d2dPeriods = computed(() => {
   if (props.calculatorMode !== 'dateToDate' || mode.value !== 'test') return []
   if (!d2d.value.anchorDate) return []
-  return buildD2dPeriodsFromAnchorReadings(d2d.value.anchorDate, d2d.value.anchorLitres, d2d.value.readings, props.today)
+  const readings = d2d.value.readings
+  // Force dependency on each reading so in-place edits (syncD2dReading) trigger re-run
+  readings.forEach(r => r?.date && (r?.litres ?? r?.value ?? 0))
+  return buildD2dPeriodsFromAnchorReadings(d2d.value.anchorDate, d2d.value.anchorLitres, readings, props.today)
 })
 
 const activePeriods = computed(() => {
@@ -2037,10 +2074,11 @@ function buildSectors (readings) {
   const sorted = [...readings].sort((a, b) => a.reading_date.localeCompare(b.reading_date))
   const sectors = []
   for (let i = 0; i < sorted.length - 1; i++) {
-    const r1     = sorted[i]; const r2 = sorted[i + 1]
+    const r1 = sorted[i]; const r2 = sorted[i + 1]
     const sStart = i === 0 ? r1.reading_date : nextDay(r1.reading_date)
-    const bd     = blockDays(sStart, r2.reading_date)
-    const usage  = Math.max(0, Math.round(Number(r2.reading_value) - Number(r1.reading_value)))
+    if (r2.reading_date <= r1.reading_date) continue // skip duplicate or reversed dates so From ≤ To
+    const bd = blockDays(sStart, r2.reading_date)
+    const usage = Math.max(0, Math.round(Number(r2.reading_value) - Number(r1.reading_value)))
     sectors.push({
       start: sStart, end: r2.reading_date,
       start_reading: Number(r1.reading_value), end_reading: Number(r2.reading_value),
@@ -2056,6 +2094,12 @@ function blockDays (start, end) {
 }
 function nextDay (date) {
   const d = new Date(date+'T00:00:00'); d.setDate(d.getDate()+1); return localDateStr(d)
+}
+function d2dMinDateForReading (period, ri) {
+  if (!period?.water) return period?.start || ''
+  if (ri === 0) return nextDay(period.water.openingDate || period.start)
+  const prev = period.water.readings?.[ri - 1]?.date
+  return prev ? nextDay(prev) : (period.water.openingDate || period.start)
 }
 function fmt (d) {
   if (!d) return '—'
@@ -2119,6 +2163,7 @@ recomputeTestPeriod()
 .chip-period { display: inline-block; padding: 0.25rem 0.75rem; background: #ebf7fc; color: #2b7fa3; border: 1px solid #B0D3DF; border-radius: 20px; font-size: 0.78rem; font-weight: 700; }
 .chip-days   { display: inline-block; padding: 0.2rem 0.55rem; background: #f7fafb; color: #718096; border: 1px solid #e2e8f0; border-radius: 20px; font-size: 0.74rem; font-weight: 600; }
 .chip-open   { display: inline-block; padding: 0.15rem 0.55rem; background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; border-radius: 4px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-left: 0.4rem; }
+.chip-closed { display: inline-block; padding: 0.15rem 0.55rem; background: #e2e8f0; color: #4a5568; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-left: 0.4rem; }
 .chip-meter  { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.65rem; border-radius: 20px; font-size: 0.74rem; font-weight: 700; }
 .chip-meter--water { background: #ebf7fc; color: #2b7fa3; border: 1px solid #B0D3DF; }
 .chip-meter--elec  { background: #fffbeb; color: #b7791f; border: 1px solid #fef08a; }
@@ -2290,6 +2335,7 @@ recomputeTestPeriod()
 
 /* ── Closing bar ────────────────────────────────────────────────────────────── */
 .closing-bar { display: grid; grid-template-columns: repeat(3, 1fr); background: #f0f4f6; border-top: 1px solid #e2e8f0; margin-top: 0.75rem; }
+.closing-bar .closing-cell--single { grid-column: 1 / -1; }
 .closing-bar--elec    { background: #2d2d0a; }
 .closing-bar--resolved { background: #eaf6f0; border-top-color: #9ae6b4; }
 .closing-bar--elec.closing-bar--resolved { background: #1a3a1a; }
