@@ -76,6 +76,12 @@ chmod +x .git/hooks/pre-commit
 2. ✅ If hook fails, fix duplicates before committing
 3. ✅ Run manual check: `.\scripts\PreventDuplicates.ps1 -PreCommit`
 
+### 5. Calculator architecture check
+**Location**: `scripts/check-calculator-architecture.ps1`  
+**Purpose**: Enforces PrimaryRules.mdc / ProjectDescription.md — period and sector logic only in Calculator.php / Calendar.php, not in Calculator.vue.  
+**When it runs**: (1) Before every Docker build (`Build_Core.cmd` / `BuildDocker_Core.ps1`). (2) Before every commit if you install the pre-commit hook — run `.\scripts\install-pre-commit.ps1` from repo root once; then the hook at `.git/hooks/pre-commit` runs the same check and blocks commit on failure.  
+**Rule**: Calculator.vue must not contain period/sector-building logic (e.g. `buildD2dPeriodsFromAnchorReadings`). Vue only calls backend APIs and renders. See ProjectDescription.md and PrimaryRules.mdc.
+
 ## Best Practices
 
 ### ✅ DO:

@@ -12,6 +12,8 @@
 
 No Blade views for the calculator. No legacy CalculatorPHP, BillingPeriodCalculator, BillingCalculatorController, or AccountBillingCalculatorController — all deleted.
 
+**Enforcement:** Calculator.vue is UI only. Period and sector logic lives only in Calculator.php / Calendar.php. No exceptions. The build (Build_Core.cmd / BuildDocker_Core.ps1) runs a check before Docker build; if Calculator.vue contains forbidden period/sector-building patterns, the build fails.
+
 ---
 
 ## Section 0: Field Definitions & State Rules (Reference for c.php)
@@ -75,6 +77,15 @@ Returns list of sub-sectors, each with `['start' => date, 'end' => date, 'usage'
 
 **c.php implementation:** `calculatePeriods(int $billDay, string $startDate, string $endDate): array`  
 Returns `[['start' => 'Y-m-d', 'end' => 'Y-m-d'], ...]`. Delegates entirely to `Calendar::periodStart()`, `Calendar::periodEnd()`, and `Calendar::nextDay()`. No billing math here.
+
+---
+
+## Section 5.2: Date-to-Date period enumeration
+
+**Plain language:** Given an anchor (date + litres) and a list of readings (date + litres), build periods for Date-to-Date billing. Accept each reading into the current period; when the last reading is ≥ 30 days (inclusive block days) from the period opening, close that period and open the next. The next period’s opening = previous period’s closing (meter does not reset). Used by the calculator UI (Test and Account mode) and any backend that needs D2D period structure.
+
+**c.php implementation:** `buildD2dPeriodsFromAnchorReadings(string $anchorDate, $anchorLitres, array $readings, ?string $today = null): array`  
+Returns a list of period objects (start, end, blockDays, water opening/closing, sectors, etc.). Uses `Calendar::blockDays()`, `Calendar::nextDay()`. Helper `buildD2dSectors()` builds sectors from a reading chain (inclusive block days). All consumption in integers.
 
 ---
 
@@ -167,6 +178,7 @@ All reads use the existing `DB` facade already present in c.php. No new applicat
 | 4.0        | Remainder Method (no float)       | `applyRemainderMethod()` |
 | 5.0        | Calendar / inclusive days         | `calendar.php` |
 | 5.1        | Period enumeration                | `calculatePeriods()` |
+| 5.2        | Date-to-Date period enumeration   | `buildD2dPeriodsFromAnchorReadings()`, `buildD2dSectors()` |
 | 6.0        | Public entry                      | `computePeriod()` |
 | 7.0        | Tariff template resolution        | `loadTariffTemplate()` |
 | 8.0        | Tiered charge computation         | `applyTieredRates()` |

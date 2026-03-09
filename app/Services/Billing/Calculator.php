@@ -451,6 +451,201 @@ final class Calculator
     }
 
     // =========================================================================
+    // PD Section 5.2 — Date-to-Date period enumeration
+    // =========================================================================
+
+    private const D2D_MIN_DAYS = 30;
+
+    /**
+     * Build D2D periods from anchor + readings. Accept each reading into current period;
+     * when last reading is >= 30 days from period opening, close period and open next.
+     * Next period opening = previous period closing (meter does not reset).
+     *
+     * @param array<int, array{date: string, litres?: int|float, value?: int|float}> $readings
+     * @return array<int, array{start: string, end: string, blockDays: int, expanded: bool, d2dReadingsStartIndex: int|null, water: array, electricity: null, showBill: bool, calculating: bool, calcError: string, bill: null, closed: bool}>
+     */
+    public function buildD2dPeriodsFromAnchorReadings(string $anchorDate, $anchorLitres, array $readings, ?string $today = null): array
+    {
+        $anchorLitres = (int) round((float) ($anchorLitres ?? 0));
+        $filtered = [];
+        foreach ($readings as $r) {
+            if (empty($r['date'])) {
+                continue;
+            }
+            $litres = isset($r['litres']) ? (int) round((float) $r['litres']) : (isset($r['value']) ? (int) round((float) $r['value']) : 0);
+            if ($litres < 0) {
+                continue;
+            }
+            $filtered[] = ['date' => $r['date'], 'litres' => $litres];
+        }
+        usort($filtered, fn ($a, $b) => strcmp($a['date'], $b['date']));
+
+        $periods = [];
+        $anchor = ['date' => $anchorDate, 'litres' => $anchorLitres];
+        $periodReadings = [];
+
+        foreach ($filtered as $r) {
+            $litres = $r['litres'];
+            $prevDate = $periodReadings !== [] ? end($periodReadings)['date'] : $anchor['date'];
+            $prevLitres = $periodReadings !== [] ? end($periodReadings)['litres'] : $anchor['litres'];
+            $invalid = $r['date'] <= $prevDate || $litres < $prevLitres;
+
+            $periodReadings[] = [
+                'date' => $r['date'],
+                'litres' => $litres,
+                'klStr' => number_format($litres / 1000, 2, '.', ''),
+                'error' => $invalid ? 'Date must be after previous; reading must be ≥ previous.' : '',
+            ];
+
+            $daysFromOpening = $this->calendar->blockDays($anchor['date'], $r['date']);
+            if ($daysFromOpening >= self::D2D_MIN_DAYS) {
+                $start = $anchor['date'];
+                $end = $r['date'];
+                $validChain = array_merge(
+                    [['date' => $anchor['date'], 'litres' => $anchor['litres']]],
+                    array_values(array_filter($periodReadings, fn ($x) => $x['error'] === ''))
+                );
+                $sectorInput = count($validChain) >= 2
+                    ? array_map(fn ($x) => ['reading_date' => $x['date'], 'reading_value' => $x['litres']], $validChain)
+                    : [
+                        ['reading_date' => $anchor['date'], 'reading_value' => $anchor['litres']],
+                        ['reading_date' => $r['date'], 'reading_value' => $litres],
+                    ];
+                $sectors = $this->buildD2dSectors($sectorInput);
+                $usage = max(0, $litres - $anchor['litres']);
+                $bd = $this->calendar->blockDays($start, $end);
+                $dailyUsage = $bd > 0 ? (int) round($usage / $bd) : 0;
+                $closedStartIndex = count($filtered) - count($periodReadings);
+
+                $periods[] = [
+                    'start' => $start,
+                    'end' => $end,
+                    'blockDays' => $bd,
+                    'expanded' => count($periods) === 0,
+                    'd2dReadingsStartIndex' => $closedStartIndex,
+                    'water' => [
+                        'openingLitres' => $anchor['litres'],
+                        'openingDate' => $anchor['date'],
+                        'readings' => array_map(fn ($x) => array_merge([], $x), $periodReadings),
+                        'sectors' => $sectors,
+                        'dailyUsage' => $dailyUsage,
+                        'provisionalClosingLitres' => $litres,
+                        'calculatedClosingLitres' => $litres,
+                        'stats' => null,
+                        'adjustmentBroughtForward' => 0,
+                        'insufficientData' => false,
+                    ],
+                    'electricity' => null,
+                    'showBill' => false,
+                    'calculating' => false,
+                    'calcError' => '',
+                    'bill' => null,
+                    'closed' => true,
+                ];
+
+                $closingReading = end($periodReadings);
+                $anchor = ['date' => $closingReading['date'], 'litres' => $closingReading['litres']];
+                $periodReadings = [];
+            }
+        }
+
+        $lastClosed = $periods !== [] ? $periods[count($periods) - 1] : null;
+        $openOpeningLitres = $lastClosed !== null && isset($lastClosed['water'])
+            ? ($lastClosed['water']['calculatedClosingLitres'] ?? $lastClosed['water']['provisionalClosingLitres'])
+            : $anchor['litres'];
+        $openOpeningDate = $lastClosed !== null && isset($lastClosed['water'])
+            ? ($lastClosed['end'] ?? $anchor['date'])
+            : $anchor['date'];
+
+        $start = $openOpeningDate;
+        $lastR = $periodReadings !== [] ? $periodReadings[count($periodReadings) - 1] : null;
+        $end = $lastR !== null ? $lastR['date'] : $start;
+        if ($today !== null && $today !== '' && $end < $today) {
+            $end = $today;
+        }
+        $openAnchor = ['date' => $openOpeningDate, 'litres' => $openOpeningLitres];
+        $validChain = array_merge(
+            [$openAnchor],
+            array_values(array_filter($periodReadings, fn ($x) => $x['error'] === ''))
+        );
+        $sectorInput = count($validChain) >= 2
+            ? array_map(fn ($x) => ['reading_date' => $x['date'], 'reading_value' => $x['litres']], $validChain)
+            : ($periodReadings !== []
+                ? [
+                    ['reading_date' => $openOpeningDate, 'reading_value' => $openOpeningLitres],
+                    ['reading_date' => $periodReadings[0]['date'], 'reading_value' => $periodReadings[0]['litres']],
+                ]
+                : []);
+        $sectors = count($sectorInput) >= 2 ? $this->buildD2dSectors($sectorInput) : [];
+        $lastLitres = $lastR !== null ? $lastR['litres'] : $openOpeningLitres;
+        $usage = max(0, $lastLitres - $openOpeningLitres);
+        $bd = $this->calendar->blockDays($start, $end);
+        $dailyUsage = $bd > 0 ? (int) round($usage / $bd) : 0;
+        $d2dReadingsStartIndex = $periodReadings !== [] ? count($filtered) - count($periodReadings) : count($filtered);
+
+        $periods[] = [
+            'start' => $start,
+            'end' => $end,
+            'blockDays' => $bd,
+            'expanded' => true,
+            'd2dReadingsStartIndex' => $d2dReadingsStartIndex,
+            'water' => [
+                'openingLitres' => $openOpeningLitres,
+                'openingDate' => $openOpeningDate,
+                'readings' => $periodReadings,
+                'sectors' => $sectors,
+                'dailyUsage' => $dailyUsage,
+                'provisionalClosingLitres' => $lastLitres,
+                'calculatedClosingLitres' => $lastLitres,
+                'stats' => null,
+                'adjustmentBroughtForward' => 0,
+                'insufficientData' => false,
+            ],
+            'electricity' => null,
+            'showBill' => false,
+            'calculating' => false,
+            'calcError' => '',
+            'bill' => null,
+            'closed' => false,
+        ];
+
+        return $periods;
+    }
+
+    /**
+     * Build sectors from a chain of reading_date + reading_value (for D2D). Inclusive block days.
+     *
+     * @param array<int, array{reading_date: string, reading_value: int|float}> $readings
+     * @return array<int, array{start: string, end: string, start_reading: int, end_reading: int, total_usage: int, block_days: int, daily_avg: float}>
+     */
+    private function buildD2dSectors(array $readings): array
+    {
+        $sorted = $readings;
+        usort($sorted, fn ($a, $b) => strcmp($a['reading_date'], $b['reading_date']));
+        $sectors = [];
+        for ($i = 0; $i < count($sorted) - 1; $i++) {
+            $r1 = $sorted[$i];
+            $r2 = $sorted[$i + 1];
+            $sStart = $i === 0 ? $r1['reading_date'] : $this->calendar->nextDay($r1['reading_date']);
+            if ($r2['reading_date'] <= $r1['reading_date']) {
+                continue;
+            }
+            $bd = $this->calendar->blockDays($sStart, $r2['reading_date']);
+            $usage = max(0, (int) round((float) $r2['reading_value'] - (float) $r1['reading_value']));
+            $sectors[] = [
+                'start' => $sStart,
+                'end' => $r2['reading_date'],
+                'start_reading' => (int) round((float) $r1['reading_value']),
+                'end_reading' => (int) round((float) $r2['reading_value']),
+                'total_usage' => $usage,
+                'block_days' => $bd,
+                'daily_avg' => $bd > 0 ? round($usage / $bd * 10) / 10 : 0.0,
+            ];
+        }
+        return $sectors;
+    }
+
+    // =========================================================================
     // PD Section 9.0 — Fixed Costs
     // =========================================================================
 

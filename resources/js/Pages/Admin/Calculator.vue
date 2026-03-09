@@ -147,7 +147,7 @@
       </template>
 
       <div
-        v-if="(mode === 'test' && (!!test.periodStart || (calculatorMode === 'dateToDate' && d2d.anchorDate && d2dPeriods.length > 0))) || (mode === 'account' && activePeriods.length > 0)"
+        v-if="(mode === 'test' && (!!test.periodStart || (calculatorMode === 'dateToDate' && d2d.anchorDate && d2dPeriodsFromServer.length > 0))) || (mode === 'account' && activePeriods.length > 0)"
         class="top-meter-tabs"
       >
         <button
@@ -337,16 +337,16 @@
                       <input type="date" v-model="r.date" class="f-input r-date"
                         :min="calculatorMode === 'dateToDate' && !period.closed ? d2dMinDateForReading(period, ri) : period.start"
                         :max="period.end"
-                        @change="calculatorMode === 'dateToDate' && !period.closed ? syncD2dReading(period, ri, pi) : recomputePeriodWater(period, pi)" />
+                        @change="calculatorMode === 'dateToDate' && !period.closed ? syncD2dReading(period, ri, pi) : (calculatorMode === 'dateToDate' && period.closed && syncClosedD2dReading(period, ri, pi), recomputePeriodWater(period, pi))" />
                     </div>
                     <MeterInput v-model="r.klStr"
-                      @change="calculatorMode === 'dateToDate' && !period.closed ? (r.litres = klStrToLitres(r.klStr || '0'), syncD2dReading(period, ri, pi)) : onWaterInput(period, r, pi)" />
+                      @change="calculatorMode === 'dateToDate' && !period.closed ? (r.litres = klStrToLitres(r.klStr || '0'), syncD2dReading(period, ri, pi)) : (calculatorMode === 'dateToDate' && period.closed ? (r.litres = klStrToLitres(r.klStr || '0'), syncClosedD2dReading(period, ri, pi), recomputePeriodWater(period, pi)) : onWaterInput(period, r, pi))" />
                     <div class="r-litres" v-if="r.litres != null && !r.error">{{ fmtN(r.litres) }} L</div>
                     <div class="r-seq-error" v-if="r.error">
                       <i class="fas fa-exclamation-triangle"></i> {{ r.error }}
                     </div>
                     <button class="btn-rm"
-                      @click="calculatorMode === 'dateToDate' && !period.closed ? removeD2dReading(period, ri, pi) : (period.water.readings.splice(ri, 1), recomputePeriodWater(period, pi))">
+                      @click="calculatorMode === 'dateToDate' && !period.closed ? removeD2dReading(period, ri, pi) : (calculatorMode === 'dateToDate' && period.closed ? removeClosedD2dReading(period, ri, pi) : (period.water.readings.splice(ri, 1), recomputePeriodWater(period, pi)))">
                       <i class="fas fa-times"></i>
                     </button>
                   </div>
@@ -810,6 +810,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import MeterInput  from '@/components/MeterInput.vue'
 import ElecInput   from '@/components/ElecInput.vue'
@@ -817,6 +818,7 @@ import ElecInput   from '@/components/ElecInput.vue'
 // ── Alarm state (ALM-001) ─────────────────────────────────────────────────────
 const alarmModal = ref({ show: false, items: [] })
 
+const page = usePage()
 const props = defineProps({
   users:            { type: Array,  default: () => [] },
   tariffTemplates:  { type: Array,  default: () => [] },
@@ -876,13 +878,14 @@ const test = ref({
   periodEnd:         '',
   periodDays:        0,
   periods:           [],
+  periodsMeta:       [], // from backend (Calculator.php) for Add Period
   activeMeterTab:    'water',   // top-level tab: 'water' | 'electricity'
   currentDate:       props.today || localDateStr(new Date()),
   currentDateActive: false,
 })
 
 // ══════════════════════════════════════════════════════════
-// DATE-TO-DATE (D2D): anchor + readings; period closes when reading >= 30 days from anchor
+// DATE-TO-DATE (D2D): anchor + readings; periods from PHP (POST /admin/calculator/d2d-periods)
 // ══════════════════════════════════════════════════════════
 const D2D_MIN_DAYS = 30
 const d2d = ref({
@@ -891,10 +894,32 @@ const d2d = ref({
   templateId:   '',
   readings:     [], // { date, litres }
 })
-// Persist bill + showBill per period index (D2D periods are recreated by computed)
+// Periods returned by backend (source of truth in Calculator.php)
+const d2dPeriodsFromServer = ref([])
+// Persist bill + showBill per period index
 const d2dBillState = ref({})
-function buildD2dPeriods () {
-  // No-op; d2dPeriods is computed reactively
+
+/** Call backend to build D2D periods. Payload: { anchor_date, anchor_litres, readings, today? }. Returns periods array. */
+async function fetchD2dPeriodsPayload (payload) {
+  if (!payload?.anchor_date) return []
+  const res = await apiPost('/admin/calculator/d2d-periods', {
+    anchor_date:   payload.anchor_date,
+    anchor_litres: payload.anchor_litres ?? 0,
+    readings:       payload.readings ?? [],
+    today:          payload.today ?? null,
+  })
+  return res?.success && res?.data?.periods ? res.data.periods : []
+}
+
+/** Fetch D2D periods for Test mode from current d2d state and set d2dPeriodsFromServer. */
+async function fetchD2dPeriods () {
+  if (props.calculatorMode !== 'dateToDate' || mode.value !== 'test' || !d2d.value.anchorDate) return
+  d2dPeriodsFromServer.value = await fetchD2dPeriodsPayload({
+    anchor_date:   d2d.value.anchorDate,
+    anchor_litres: d2d.value.anchorLitres,
+    readings:      d2d.value.readings,
+    today:         props.today,
+  })
 }
 
 // Effective "today": uses the test-mode date override when active, otherwise the server date.
@@ -921,6 +946,17 @@ watch(
     if (clamped !== test.value.currentDate) test.value.currentDate = clamped
   },
   { immediate: false }
+)
+
+// D2D Test mode: when anchor or readings change, fetch periods from backend.
+watch(
+  () => ({ ...d2d.value }),
+  () => {
+    if (props.calculatorMode === 'dateToDate' && mode.value === 'test' && d2d.value.anchorDate) {
+      fetchD2dPeriods()
+    }
+  },
+  { deep: true, immediate: true }
 )
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
@@ -984,33 +1020,46 @@ function localDateStr (d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-function recomputeTestPeriod () {
+async function recomputeTestPeriod () {
   const { billDay, startMonth } = test.value
   if (!startMonth || !billDay) return
-  test.value.periodStart = `${startMonth}-${String(billDay).padStart(2, '0')}`
-  const [y, m] = startMonth.split('-').map(Number)
-  let ny = y, nm = m + 1
-  if (nm > 12) { nm = 1; ny++ }
-  const lastDayNext = new Date(ny, nm, 0).getDate()
-  const effDay      = Math.min(billDay, lastDayNext)
-  const d = new Date(ny, nm - 1, effDay)
-  d.setDate(d.getDate() - 1)
-  test.value.periodEnd  = localDateStr(d)
-  test.value.periodDays = blockDays(test.value.periodStart, test.value.periodEnd)
-  // Auto-create first period shell as soon as tariff + dates are set
+  const startDate = `${startMonth}-${String(billDay).padStart(2, '0')}`
+  const res = await apiPost('/admin/calculator/periods', { bill_day: billDay, start_date: startDate })
+  if (!res?.success || !res?.data?.periods?.length) {
+    test.value.periodStart = startDate
+    test.value.periodEnd = ''
+    test.value.periodDays = 0
+    test.value.periodsMeta = []
+    if (test.value.templateId && test.value.periods.length === 0) {
+      const [y, m] = startMonth.split('-').map(Number)
+      let ny = y, nm = m + 1
+      if (nm > 12) { nm = 1; ny++ }
+      const lastDayNext = new Date(ny, nm, 0).getDate()
+      const effDay = Math.min(billDay, lastDayNext)
+      const d = new Date(ny, nm - 1, effDay)
+      d.setDate(d.getDate() - 1)
+      test.value.periodEnd = localDateStr(d)
+      test.value.periodDays = blockDays(startDate, test.value.periodEnd)
+      test.value.periods = [makeEmptyPeriod(0, startDate, test.value.periodEnd, test.value.periodDays)]
+    }
+    return
+  }
+  const periodsMeta = res.data.periods
+  test.value.periodsMeta = periodsMeta
+  const first = periodsMeta[0]
+  test.value.periodStart = first.start
+  test.value.periodEnd = first.end
+  test.value.periodDays = blockDays(first.start, first.end)
   if (test.value.templateId && test.value.periods.length === 0) {
-    test.value.periods = [makeEmptyPeriod(0, test.value.periodStart, test.value.periodEnd, test.value.periodDays)]
+    test.value.periods = [makeEmptyPeriod(0, first.start, first.end, test.value.periodDays)]
   }
 }
 
 function onTestTemplateChange () {
   const t = props.tariffTemplates.find(t => String(t.id) === String(test.value.templateId))
   if (t?.billing_day) { test.value.billDay = t.billing_day }
+  test.value.periods = []
   recomputeTestPeriod()
-  // Reset periods when tariff changes
-  test.value.periods = test.value.periodStart
-    ? [makeEmptyPeriod(0, test.value.periodStart, test.value.periodEnd, test.value.periodDays)]
-    : []
   test.value.activeMeterTab = 'water'
 }
 
@@ -1176,7 +1225,8 @@ function checkPeriodAlarms (period, pi) {
 
 async function addPeriod () {
   const periods = test.value.periods
-  if (!periods.length) return
+  const meta = test.value.periodsMeta
+  if (!periods.length || !meta?.length) return
 
   // Auto-calculate the outgoing period before closing it
   const lastPi = periods.length - 1
@@ -1187,31 +1237,27 @@ async function addPeriod () {
 
   periods[periods.length - 1].expanded = false
 
-  const last     = periods[periods.length - 1]
-  const newStart = nextDay(last.end)
-  const [sy, sm] = newStart.split('-').map(Number)
-  const tmpMonth = test.value.startMonth
-  test.value.startMonth = `${sy}-${String(sm).padStart(2,'0')}`
-  recomputeTestPeriod()
-
-  const newP = makeEmptyPeriod(periods.length, test.value.periodStart, test.value.periodEnd, test.value.periodDays)
+  const last = periods[periods.length - 1]
+  const nextMeta = meta[periods.length]
+  if (!nextMeta) return
+  const bd = blockDays(nextMeta.start, nextMeta.end)
+  const newP = makeEmptyPeriod(periods.length, nextMeta.start, nextMeta.end, bd)
 
   // Carry forward water meter if already initialized
   if (last.water !== null) {
     const openingLitres = last.water.calculatedClosingLitres ?? last.water.provisionalClosingLitres ?? last.water.openingLitres
-    newP.water = makeWaterMeter(openingLitres, newStart)
+    newP.water = makeWaterMeter(openingLitres, nextMeta.start)
     newP.water.inheritedDailyUsage = last.water.dailyUsage
   }
 
   // Carry forward electricity meter if already initialized
   if (last.electricity !== null) {
     const openingKwh = last.electricity.calculatedClosingKwh ?? last.electricity.provisionalClosingKwh ?? last.electricity.openingKwh
-    newP.electricity = makeElecMeter(openingKwh, newStart)
+    newP.electricity = makeElecMeter(openingKwh, nextMeta.start)
     newP.electricity.inheritedDailyUsage = last.electricity.dailyUsage
   }
 
   periods.push(newP)
-  test.value.startMonth = tmpMonth
   if (newP.water)       recomputePeriodWater(newP, periods.length - 1)
   if (newP.electricity) recomputePeriodElec(newP, periods.length - 1)
 }
@@ -1223,6 +1269,7 @@ function addReadingToPeriod (period, pi) {
     const minDate = lastDate ? nextDay(lastDate) : (period.water.openingDate || period.start)
     const prevLitres = readings.length > 0 ? readings[readings.length - 1].litres : (period.water.openingLitres ?? 0)
     d2d.value.readings.push({ date: minDate || props.today || localDateStr(new Date()), litres: Math.round(Number(prevLitres)) })
+    fetchD2dPeriods()
     recalcD2dOpenPeriodBill(pi)
     return
   }
@@ -1250,6 +1297,7 @@ function syncD2dReading (period, ri, pi) {
   const litres = Math.max(minLitres, raw)
   d2d.value.readings[idx] = { date: r.date, litres }
   r.litres = litres
+  fetchD2dPeriods()
   if (typeof pi === 'number') recalcD2dOpenPeriodBill(pi)
 }
 
@@ -1258,7 +1306,29 @@ function removeD2dReading (period, ri, pi) {
   const idx = period.d2dReadingsStartIndex + ri
   if (idx < 0 || idx >= d2d.value.readings.length) return
   d2d.value.readings.splice(idx, 1)
+  fetchD2dPeriods()
   if (typeof pi === 'number') recalcD2dOpenPeriodBill(pi)
+}
+
+/** Sync a reading edit in a closed D2D period back to d2d.value.readings and refetch so open period opening stays correct. */
+function syncClosedD2dReading (period, ri, pi) {
+  if (props.calculatorMode !== 'dateToDate' || !period.closed || period.d2dReadingsStartIndex == null) return
+  const r = period.water?.readings?.[ri]
+  if (!r) return
+  const idx = period.d2dReadingsStartIndex + ri
+  if (idx < 0 || idx >= d2d.value.readings.length) return
+  const litres = r.litres != null ? r.litres : Math.round(klStrToLitres(r.klStr || '0'))
+  d2d.value.readings[idx] = { date: r.date, litres }
+  fetchD2dPeriods()
+}
+
+/** Remove a reading from a closed D2D period in d2d.value.readings and refetch. */
+function removeClosedD2dReading (period, ri, pi) {
+  if (props.calculatorMode !== 'dateToDate' || !period.closed || period.d2dReadingsStartIndex == null) return
+  const idx = period.d2dReadingsStartIndex + ri
+  if (idx < 0 || idx >= d2d.value.readings.length) return
+  d2d.value.readings.splice(idx, 1)
+  fetchD2dPeriods()
 }
 
 // ── Water recompute ───────────────────────────────────────────────────────────
@@ -1418,8 +1488,12 @@ async function reconcileStraddleWater (pi) {
     prevClosing = pw.calculatedClosingLitres
   }
 
-  currW.openingLitres = prevClosing
-  currW.openingDate   = currP.start
+  // D2D open period: backend already set opening from last closed; do not overwrite with straddle.
+  const isD2dOpenPeriod = props.calculatorMode === 'dateToDate' && periods.length > 0 && pi === periods.length - 1 && !currP.closed
+  if (!isD2dOpenPeriod) {
+    currW.openingLitres = prevClosing
+    currW.openingDate   = currP.start
+  }
 
   const tid = parseInt(effectiveTemplateId.value)
   if (!tid) return
@@ -1804,19 +1878,20 @@ function onUserChange () {
   ua.value.accountId = ''; ua.value.accountData = null; ua.value.periods = []
 }
 
-function buildD2dPeriodsFromAccountData (data) {
+/** Build D2D payload from account data for API call (anchor + readings from first water meter). */
+function d2dPayloadFromAccountData (data) {
   const waterMeter = (data.meters || []).find(m => m.meter_type === 'water')
-  if (!waterMeter || !waterMeter.readings || waterMeter.readings.length === 0) return []
+  if (!waterMeter || !waterMeter.readings || waterMeter.readings.length === 0) return null
   const sorted = [...waterMeter.readings].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
   const first = sorted[0]
   const val = Number(first.value ?? 0)
   const anchorLitres = (val >= 1000 && Number.isInteger(val)) ? Math.round(val) : Math.round(val * 1000)
-  const rest = sorted.slice(1).map(r => {
+  const readings = sorted.slice(1).map(r => {
     const v = Number(r.value ?? 0)
     const litres = (v >= 1000 && Number.isInteger(v)) ? Math.round(v) : Math.round(v * 1000)
-    return { date: r.date, litres, value: v }
+    return { date: r.date, litres }
   })
-  return buildD2dPeriodsFromAnchorReadings(first.date, anchorLitres, rest)
+  return { anchor_date: first.date, anchor_litres: anchorLitres, readings, today: props.today }
 }
 
 async function loadAccount () {
@@ -1826,10 +1901,13 @@ async function loadAccount () {
     const res = await apiFetch(`/admin/calculator/account/${ua.value.accountId}`)
     if (res.success) {
       ua.value.accountData = res.data
-      ua.value.periods     = props.calculatorMode === 'dateToDate'
-        ? buildD2dPeriodsFromAccountData(res.data)
-        : buildPeriodsFromAccountData(res.data)
-      if (props.calculatorMode !== 'dateToDate') await runCalculationCascade(ua.value.periods)
+      if (props.calculatorMode === 'dateToDate') {
+        const payload = d2dPayloadFromAccountData(res.data)
+        ua.value.periods = payload ? await fetchD2dPeriodsPayload(payload) : []
+      } else {
+        ua.value.periods = buildPeriodsFromAccountData(res.data)
+        await runCalculationCascade(ua.value.periods)
+      }
     }
   } catch { /* ignore */ }
   finally { ua.value.loading = false }
@@ -1938,126 +2016,10 @@ async function runCalculationCascade (periods) {
   }
 }
 
-// ── Shared helpers ────────────────────────────────────────────────────────────
-// Date-to-Date: accept each reading into the current period; if last reading >= 30 days from opening, close and open next with that reading as anchor.
-// today: optional YYYY-MM-DD so open period date picker allows up to today
-function buildD2dPeriodsFromAnchorReadings (anchorDate, anchorLitres, readings, today) {
-  const filtered = [...(readings || [])].filter(r => r.date && (r.litres ?? r.value ?? 0) >= 0)
-  const sorted = filtered.sort((a, b) => new Date(a.date + 'T00:00:00') - new Date(b.date + 'T00:00:00'))
-  const periods = []
-  let anchor = { date: anchorDate, litres: Math.round(Number(anchorLitres || 0)) }
-  let periodReadings = []
-
-  for (const r of sorted) {
-    const litres = Math.round(Number(r.litres ?? r.value ?? 0))
-    const prevDate = periodReadings.length ? periodReadings[periodReadings.length - 1].date : anchor.date
-    const prevLitres = periodReadings.length ? periodReadings[periodReadings.length - 1].litres : anchor.litres
-    const invalid = r.date <= prevDate || litres < prevLitres
-
-    // 1. Always accept this reading into the current period
-    periodReadings.push({
-      date: r.date, litres, klStr: (litres / 1000).toFixed(2),
-      error: invalid ? 'Date must be after previous; reading must be ≥ previous.' : '',
-    })
-
-    // 2. If last reading (this one) is >= 30 days from period opening, close this period and open next; use last reading as anchor
-    const daysFromOpening = blockDays(anchor.date, r.date)
-    if (daysFromOpening >= D2D_MIN_DAYS) {
-      const start = anchor.date
-      const end = r.date
-      const validChain = [anchor, ...periodReadings.filter(x => !x.error)].map(x => ({ reading_date: x.date, reading_value: x.litres }))
-      const sectorInput = validChain.length >= 2 ? validChain : [{ reading_date: anchor.date, reading_value: anchor.litres }, { reading_date: r.date, reading_value: litres }]
-      const sectors = buildSectors(sectorInput)
-      const usage = Math.max(0, litres - anchor.litres)
-      const bd = blockDays(start, end)
-      const dailyUsage = bd > 0 ? Math.round(usage / bd) : 0
-      const closedStartIndex = sorted.length - periodReadings.length
-      periods.push({
-        start,
-        end,
-        blockDays: bd,
-        expanded: periods.length === 0,
-        d2dReadingsStartIndex: closedStartIndex,
-        water: {
-          openingLitres: anchor.litres,
-          openingDate: anchor.date,
-          readings: periodReadings.map(x => ({ ...x })),
-          sectors,
-          dailyUsage,
-          provisionalClosingLitres: litres,
-          calculatedClosingLitres: litres,
-          stats: null,
-          adjustmentBroughtForward: 0,
-          insufficientData: false,
-        },
-        electricity: null,
-        showBill: false,
-        calculating: false,
-        calcError: '',
-        bill: null,
-        closed: true,
-      })
-      const closingReading = periodReadings[periodReadings.length - 1]
-      anchor = { date: closingReading.date, litres: closingReading.litres }
-      periodReadings = []
-    }
-  }
-  // Append open period: its opening = previous period closing (read from last closed); no closed periods = use initial anchor
-  const lastClosed = periods[periods.length - 1] ?? null
-  const openOpeningLitres = lastClosed?.water ? (lastClosed.water.calculatedClosingLitres ?? lastClosed.water.provisionalClosingLitres) : anchor.litres
-  const openOpeningDate = lastClosed?.water ? (lastClosed.end || anchor.date) : anchor.date
-  const start = openOpeningDate
-  const lastR = periodReadings[periodReadings.length - 1]
-  let end = lastR ? lastR.date : start
-  if (typeof today === 'string' && today) end = end < today ? today : end
-  const openAnchor = { date: openOpeningDate, litres: openOpeningLitres }
-  const validChain = [openAnchor, ...periodReadings.filter(x => !x.error)].map(x => ({ reading_date: x.date, reading_value: x.litres }))
-  const sectorInput = validChain.length >= 2 ? validChain : (periodReadings.length ? [{ reading_date: openOpeningDate, reading_value: openOpeningLitres }, { reading_date: periodReadings[0].date, reading_value: periodReadings[0].litres }] : [])
-  const sectors = sectorInput.length >= 2 ? buildSectors(sectorInput) : []
-  const lastLitres = lastR ? lastR.litres : openOpeningLitres
-  const usage = Math.max(0, lastLitres - openOpeningLitres)
-  const bd = blockDays(start, end)
-  const dailyUsage = bd > 0 ? Math.round(usage / bd) : 0
-  const d2dReadingsStartIndex = periodReadings.length ? sorted.length - periodReadings.length : sorted.length
-  periods.push({
-    start,
-    end,
-    blockDays: bd,
-    expanded: true,
-    d2dReadingsStartIndex,
-    water: {
-      openingLitres: openOpeningLitres,
-      openingDate: openOpeningDate,
-      readings: periodReadings,
-      sectors,
-      dailyUsage,
-      provisionalClosingLitres: lastLitres,
-      calculatedClosingLitres: lastLitres,
-      stats: null,
-      adjustmentBroughtForward: 0,
-      insufficientData: false,
-    },
-    electricity: null,
-    showBill: false,
-    calculating: false,
-    calcError: '',
-    bill: null,
-    closed: false,
-  })
-  return periods
-}
-
-const d2dPeriods = computed(() => {
-  if (props.calculatorMode !== 'dateToDate' || mode.value !== 'test') return []
-  if (!d2d.value.anchorDate) return []
-  const readings = d2d.value.readings
-  // Force dependency on each reading so in-place edits (syncD2dReading) trigger re-run
-  readings.forEach(r => r?.date && (r?.litres ?? r?.value ?? 0))
-  return buildD2dPeriodsFromAnchorReadings(d2d.value.anchorDate, d2d.value.anchorLitres, readings, props.today)
-})
+// D2D periods are built by backend (Calculator.php); Vue only fetches via fetchD2dPeriods.
 
 const activePeriods = computed(() => {
-  if (props.calculatorMode === 'dateToDate' && mode.value === 'test') return d2dPeriods.value
+  if (props.calculatorMode === 'dateToDate' && mode.value === 'test') return d2dPeriodsFromServer.value
   return mode.value === 'test' ? test.value.periods : ua.value.periods
 })
 const effectiveTemplateId = computed(() => {
@@ -2119,9 +2081,16 @@ function fmtMoney (n) {
 function round2 (n) { return Math.round((n + Number.EPSILON) * 100) / 100 }
 
 // ── HTTP ──────────────────────────────────────────────────────────────────────
+// Prefer meta (fresh on Ctrl+Shift+R), then Inertia shared token.
+function getCsrfToken () {
+  return document.querySelector('meta[name="csrf-token"]')?.content || page.props.csrf_token || ''
+}
 async function apiFetch (url) { return (await window.axios.get(url)).data }
 async function apiPost  (url, data) {
-  try { return (await window.axios.post(url, data)).data }
+  const token = getCsrfToken()
+  const headers = token ? { 'X-CSRF-TOKEN': token } : {}
+  const body = typeof data === 'object' && data !== null && !Array.isArray(data) ? { ...data, _token: token } : data
+  try { return (await window.axios.post(url, body, { headers })).data }
   catch (e) { return e.response?.data || { success: false, message: e.message } }
 }
 

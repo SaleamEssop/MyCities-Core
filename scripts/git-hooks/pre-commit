@@ -1,0 +1,7 @@
+#!/bin/sh
+# Run calculator architecture check before commit. Blocks commit if Vue contains forbidden period/sector logic.
+# Install: copy to .git/hooks/pre-commit (see DevelopmentGuidelines.md)
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts/check-calculator-architecture.ps1"
+exit $?

@@ -217,6 +217,21 @@ Write-Success "Docker running"
 
 Ensure-EnvFile
 
+# Enforce PrimaryRules.mdc / ProjectDescription.md: no period/sector building in Vue; logic in Calculator.php
+$checkScript = Join-Path $Script:LaravelPath "scripts\check-calculator-architecture.ps1"
+if (Test-Path $checkScript) {
+    Write-Info "Running calculator architecture check..."
+    & $checkScript -RepoRoot $Script:LaravelPath
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "Calculator architecture check failed. Fix violations before building."
+        if (-not $RebuildAll) { Read-Host "Press Enter to exit" }
+        exit 1
+    }
+    Write-Success "Calculator architecture check passed"
+} else {
+    Write-Warn "Check script not found: $checkScript (skipping)"
+}
+
 # Non-interactive: clear caches + build all + deploy
 if ($RebuildAll) {
     Write-Host ""

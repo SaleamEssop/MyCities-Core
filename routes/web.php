@@ -350,7 +350,9 @@ Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('calculator/account/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'getAccountData'])->name('calculator.account-data');
     Route::post('calculator/reading', [\App\Http\Controllers\Admin\CalculatorController::class, 'addReading'])->name('calculator.add-reading');
     Route::delete('calculator/reading/{id}', [\App\Http\Controllers\Admin\CalculatorController::class, 'deleteReading'])->name('calculator.delete-reading');
+    Route::post('calculator/periods', [\App\Http\Controllers\Admin\CalculatorController::class, 'periodsForTest'])->name('calculator.periods');
     Route::post('calculator/calculate-periods', [\App\Http\Controllers\Admin\CalculatorController::class, 'calculatePeriods'])->name('calculator.calculate-periods');
+    Route::post('calculator/d2d-periods', [\App\Http\Controllers\Admin\CalculatorController::class, 'd2dPeriods'])->name('calculator.d2d-periods');
 
     // --- REGIONS ---
     Route::get('regions', function () {

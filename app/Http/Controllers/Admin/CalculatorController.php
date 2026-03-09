@@ -536,6 +536,34 @@ class CalculatorController extends Controller
     }
 
     /**
+     * POST /admin/calculator/periods
+     *
+     * Returns billing period boundaries for Test mode (no account). Body: bill_day, start_date (Y-m-d), end_date (optional, default start_date + 1 year).
+     */
+    public function periodsForTest(Request $request): JsonResponse
+    {
+        $billDay    = (int) $request->input('bill_day', 1);
+        $startDate  = $request->input('start_date');
+        $endDate    = $request->input('end_date');
+
+        if (!$startDate) {
+            return response()->json(['success' => false, 'error' => 'start_date is required'], 422);
+        }
+
+        if (!$endDate) {
+            $start = new \DateTimeImmutable($startDate, new \DateTimeZone('Africa/Johannesburg'));
+            $end   = $start->modify('+1 year');
+            $endDate = $end->format('Y-m-d');
+        }
+
+        $calendar   = new Calendar();
+        $calculator = new Calculator($calendar);
+        $periods    = $calculator->calculatePeriods($billDay, $startDate, $endDate);
+
+        return response()->json(['success' => true, 'data' => ['periods' => $periods]]);
+    }
+
+    /**
      * POST /admin/calculator/calculate-periods
      *
      * Returns all billing periods for an account based on its reading date span.
@@ -571,6 +599,35 @@ class CalculatorController extends Controller
         $calendar = new Calendar();
         $calculator = new Calculator($calendar);
         $periods  = $calculator->calculatePeriods($billDay, reset($allDates), end($allDates));
+
+        return response()->json(['success' => true, 'data' => ['periods' => $periods]]);
+    }
+
+    /**
+     * POST /admin/calculator/d2d-periods
+     *
+     * Build Date-to-Date periods from anchor + readings (source of truth in Calculator.php).
+     * Body: anchor_date, anchor_litres, readings: [{ date, litres }], today (optional).
+     */
+    public function d2dPeriods(Request $request): JsonResponse
+    {
+        $anchorDate   = $request->input('anchor_date');
+        $anchorLitres  = $request->input('anchor_litres');
+        $readings      = $request->input('readings', []);
+        $today         = $request->input('today');
+
+        if (!$anchorDate) {
+            return response()->json(['success' => false, 'error' => 'anchor_date is required'], 422);
+        }
+
+        $calendar   = new Calendar();
+        $calculator = new Calculator($calendar);
+        $periods    = $calculator->buildD2dPeriodsFromAnchorReadings(
+            (string) $anchorDate,
+            $anchorLitres,
+            is_array($readings) ? $readings : [],
+            $today ? (string) $today : null
+        );
 
         return response()->json(['success' => true, 'data' => ['periods' => $periods]]);
     }
